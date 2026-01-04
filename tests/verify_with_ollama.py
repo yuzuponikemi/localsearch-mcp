@@ -63,7 +63,7 @@ async def run_ollama_agent():
             # First Ollama call - agent decides whether to use tools
             print("\n🔄 Calling Ollama...")
             response = ollama.chat(
-                model='command-r',  # Use function calling compatible model
+                model='llama3.2',  # Use function calling compatible model
                 messages=messages,
                 tools=ollama_tools
             )

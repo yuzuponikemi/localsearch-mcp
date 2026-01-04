@@ -40,7 +40,7 @@ A standalone, offline Wikipedia search server implementing the Model Context Pro
 
 - Python 3.10 or higher
 - [uv](https://github.com/astral-sh/uv) package manager
-- (Optional) Ollama with llama3.2 model for testing
+- (Optional) Ollama with a tool-compatible model (e.g., command-r) for testing
 
 ### Setup
 
@@ -55,20 +55,20 @@ cd localsearch-mcp
 uv sync
 ```
 
-3. Build the Wikipedia index (first run only - takes a few minutes):
+3. Build the Wikipedia index (first run only):
 ```bash
-uv run src/server.py
+uv run python -m src
 # Press Ctrl+C after index is built
 ```
 
-This will download Simple English Wikipedia (10,000 articles) and create a BM25 index in the `data/` directory.
+This will download English Wikipedia (~6.8M articles, ~20GB) and create a BM25 index in the `data/` directory. The initial build takes significant time and disk space.
 
 ## Usage
 
 ### Running the MCP Server
 
 ```bash
-uv run src/server.py
+uv run python -m src
 ```
 
 The server will:
@@ -87,8 +87,8 @@ This tests the MCP connection and performs a direct search.
 
 #### Full Agent Test (Requires Ollama)
 ```bash
-# Make sure Ollama is running with llama3.2
-ollama pull llama3.2
+# Make sure Ollama is running with a tool-compatible model
+ollama pull command-r
 ollama serve
 
 # In another terminal:
@@ -119,7 +119,8 @@ Add this to your Claude Desktop MCP configuration:
   "mcpServers": {
     "local-wiki-search": {
       "command": "uv",
-      "args": ["run", "/path/to/localsearch-mcp/src/server.py"]
+      "args": ["run", "python", "-m", "src"],
+      "cwd": "/path/to/localsearch-mcp"
     }
   }
 }
@@ -138,6 +139,7 @@ localsearch-mcp/
 │   └── wiki_index.pkl      # BM25 index (not in git)
 ├── src/
 │   ├── __init__.py
+│   ├── __main__.py         # Entry point for `python -m src`
 │   ├── server.py           # MCP server implementation
 │   └── indexer.py          # BM25 indexing logic
 └── tests/
@@ -169,27 +171,28 @@ result = await session.call_tool(
 
 ## Customization
 
-### Using Full English Wikipedia
+### Using Simple English Wikipedia (for development)
 
-To use the full English Wikipedia instead of Simple English:
+For faster development/testing, use the lightweight Simple English Wikipedia:
 
 Edit `src/indexer.py`:
 ```python
 # Change this line:
-ds = load_dataset("wikipedia", "20220301.simple", split="train[:10000]")
+ds = load_dataset("wikimedia/wikipedia", "20231101.en", split="train")
 
-# To:
-ds = load_dataset("wikipedia", "20231101.en", split="train")
+# To (Simple English, limited to 10k articles):
+ds = load_dataset("wikimedia/wikipedia", "20231101.simple", split="train[:10000]")
 ```
 
-Note: This will require significantly more disk space (~20GB) and time to build.
+This reduces disk space to ~500MB and builds in a few minutes.
 
 ### Adjusting Index Size
 
-For development/testing, you can limit the number of articles:
+You can limit the number of articles for testing:
 
 ```python
-ds = load_dataset("wikipedia", "20220301.simple", split="train[:1000]")
+# Limit to 1000 articles
+ds = load_dataset("wikimedia/wikipedia", "20231101.en", split="train[:1000]")
 ```
 
 ## Development
@@ -215,7 +218,7 @@ Delete `data/wiki_index.pkl` and restart the server.
 
 ### Ollama Connection Fails
 - Verify Ollama is running: `ollama list`
-- Ensure llama3.2 is installed: `ollama pull llama3.2`
+- Ensure a tool-compatible model is installed: `ollama pull command-r`
 - Check Ollama API is accessible: `curl http://localhost:11434`
 
 ### MCP Server Not Starting
@@ -253,7 +256,7 @@ MIT License - see LICENSE file for details
 
 - Python 3.10 以上
 - [uv](https://github.com/astral-sh/uv) パッケージマネージャー
-- (オプション) テスト用の Ollama と llama3.2 モデル
+- (オプション) テスト用の Ollama とツール対応モデル（例: command-r）
 
 ### セットアップ手順
 
@@ -268,13 +271,13 @@ cd localsearch-mcp
 uv sync
 ```
 
-3. Wikipedia インデックスを構築（初回のみ - 数分かかります）:
+3. Wikipedia インデックスを構築（初回のみ）:
 ```bash
-uv run src/server.py
+uv run python -m src
 # インデックス構築後 Ctrl+C で終了
 ```
 
-これにより Simple English Wikipedia（約1万記事）がダウンロードされ、`data/` ディレクトリに BM25 インデックスが作成されます。
+これにより英語版 Wikipedia（約680万記事、約20GB）がダウンロードされ、`data/` ディレクトリに BM25 インデックスが作成されます。初回構築には時間とディスク容量が必要です。
 
 ## 使い方
 
