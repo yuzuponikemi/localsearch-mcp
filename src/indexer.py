@@ -33,8 +33,8 @@ class WikiIndexer:
         """Build BM25 index from Wikipedia dataset."""
         print("Downloading dataset (Simple English Wikipedia)...")
         # Using lightweight Simple English Wikipedia for development/testing
-        # For production, consider using '20231101.en' or similar
-        ds = load_dataset("wikipedia", "20220301.simple", split="train[:10000]")
+        # For production, consider using 'en' or similar
+        ds = load_dataset("wikimedia/wikipedia", "20231101.simple", split="train[:10000]")
 
         print("Tokenizing corpus...")
         tokenized_corpus = []

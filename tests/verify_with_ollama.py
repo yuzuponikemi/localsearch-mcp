@@ -11,8 +11,8 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 import ollama
 
-# MCP Server script path
-SERVER_SCRIPT = os.path.join(os.path.dirname(__file__), "../src/server.py")
+# MCP Server module path
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 async def run_ollama_agent():
@@ -26,8 +26,9 @@ async def run_ollama_agent():
     # Configure MCP server parameters
     server_params = StdioServerParameters(
         command="uv",  # or "python" if not using uv
-        args=["run", SERVER_SCRIPT],
-        env=os.environ.copy()
+        args=["run", "python", "-m", "src"],
+        env={**os.environ.copy(), "PYTHONPATH": PROJECT_ROOT},
+        cwd=PROJECT_ROOT
     )
 
     print("🤖 Starting MCP Client and connecting to Local Search Server...")
@@ -62,7 +63,7 @@ async def run_ollama_agent():
             # First Ollama call - agent decides whether to use tools
             print("\n🔄 Calling Ollama...")
             response = ollama.chat(
-                model='llama3.2',  # Use function calling compatible model
+                model='command-r',  # Use function calling compatible model
                 messages=messages,
                 tools=ollama_tools
             )
@@ -94,7 +95,7 @@ async def run_ollama_agent():
                 # Second Ollama call - synthesize final answer using tool results
                 print("\n🔄 Generating final answer...")
                 final_response = ollama.chat(
-                    model='llama3.2',
+                    model='command-r',
                     messages=messages
                 )
                 print(f"\n🤖 Agent Answer:\n{final_response.message.content}")
@@ -108,8 +109,9 @@ async def run_simple_test():
     """Simple test that directly calls the search tool without LLM."""
     server_params = StdioServerParameters(
         command="uv",
-        args=["run", SERVER_SCRIPT],
-        env=os.environ.copy()
+        args=["run", "python", "-m", "src"],
+        env={**os.environ.copy(), "PYTHONPATH": PROJECT_ROOT},
+        cwd=PROJECT_ROOT
     )
 
     print("🧪 Running simple MCP connection test...")
