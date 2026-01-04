@@ -3,7 +3,10 @@ Local Wikipedia Search MCP Server
 Provides offline Wikipedia search via MCP protocol using BM25 algorithm.
 """
 from mcp.server.fastmcp import FastMCP
-from .indexer import WikiIndexer
+try:
+    from .indexer import WikiIndexer
+except ImportError:
+    from indexer import WikiIndexer
 
 # Initialize MCP server
 mcp = FastMCP("LocalWikiSearch")
