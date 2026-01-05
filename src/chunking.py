@@ -1,6 +1,6 @@
 """
 Advanced Chunking Module for Local Search MCP
-Handles intelligent text splitting for Markdown and Code.
+Handles intelligent text splitting for Markdown and Code with smart sizing.
 """
 from enum import Enum
 from typing import List, Optional, Any, Tuple
@@ -13,10 +13,16 @@ from langchain_text_splitters import (
     Language,
 )
 
+try:
+    from .document_analyzer import DocumentAnalyzer
+except ImportError:
+    from document_analyzer import DocumentAnalyzer
+
 class ChunkingMethod(Enum):
     RECURSIVE = "recursive"
     MARKDOWN = "markdown"
     CODE = "code"
+    HYBRID = "hybrid"  # Markdown + Code awareness
 
 @dataclass
 class ChunkingConfig:
@@ -27,6 +33,8 @@ class ChunkingConfig:
         ("#", "h1"), ("##", "h2"), ("###", "h3")
     ])
     language: Optional[Language] = None
+    detected_language: str = "en"  # ISO language code (e.g., "en", "ja")
+    language_multiplier: float = 1.0  # Chunk size multiplier for language (e.g., 1.2 for Japanese)
 
 class ChunkingStrategy:
     """
@@ -92,9 +100,9 @@ class ChunkingStrategy:
         )
         return splitter.split_documents(documents)
 
-# Helper function to easily get config
+# Helper function to easily get config (deprecated, use get_smart_config)
 def get_config_for_file(filename: str) -> ChunkingConfig:
-    """Determine the best config based on file extension."""
+    """Determine the best config based on file extension (legacy)."""
     ext = filename.lower().split('.')[-1]
 
     if ext in ['md', 'markdown']:
@@ -105,3 +113,68 @@ def get_config_for_file(filename: str) -> ChunkingConfig:
         return ChunkingConfig(method=ChunkingMethod.CODE, language=Language.JS, chunk_size=1000)
     else:
         return ChunkingConfig(method=ChunkingMethod.RECURSIVE, chunk_size=1000, chunk_overlap=200)
+
+
+def get_smart_config(
+    filename: str,
+    text_content: str,
+    target_size_min: int = 500,
+    target_size_max: int = 1000
+) -> ChunkingConfig:
+    """
+    Determine the best chunking config with smart sizing based on content analysis.
+
+    Args:
+        filename: File path for type detection
+        text_content: Document text for language detection
+        target_size_min: Target minimum chunk size in characters
+        target_size_max: Target maximum chunk size in characters
+
+    Returns:
+        ChunkingConfig with optimized settings
+    """
+    # Analyze document
+    analyzer = DocumentAnalyzer()
+    analysis = analyzer.analyze(text_content, filename)
+
+    # Determine file extension
+    ext = filename.lower().split('.')[-1]
+
+    # Determine base method
+    if ext in ['md', 'markdown']:
+        method = ChunkingMethod.MARKDOWN
+        base_size = target_size_max + 200  # Slightly larger for Markdown
+    elif ext == 'py':
+        method = ChunkingMethod.CODE
+        code_lang = Language.PYTHON
+        base_size = target_size_max
+    elif ext in ['js', 'ts']:
+        method = ChunkingMethod.CODE
+        code_lang = Language.JS
+        base_size = target_size_max
+    else:
+        method = ChunkingMethod.RECURSIVE
+        code_lang = None
+        base_size = target_size_max
+
+    # Language-specific multiplier
+    language_multiplier = 1.0
+    if analysis.language == "ja":  # Japanese
+        language_multiplier = 1.2
+    elif analysis.language == "zh":  # Chinese
+        language_multiplier = 1.15
+    elif analysis.language == "ko":  # Korean
+        language_multiplier = 1.1
+
+    # Apply language multiplier
+    adjusted_size = int(base_size * language_multiplier)
+    overlap = int(adjusted_size * 0.2)  # 20% overlap
+
+    return ChunkingConfig(
+        method=method,
+        chunk_size=adjusted_size,
+        chunk_overlap=overlap,
+        language=code_lang if method == ChunkingMethod.CODE else None,
+        detected_language=analysis.language,
+        language_multiplier=language_multiplier
+    )
