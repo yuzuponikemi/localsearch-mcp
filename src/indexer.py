@@ -12,6 +12,8 @@ from rank_bm25 import BM25Okapi
 from tqdm import tqdm
 import chromadb
 from chromadb.utils import embedding_functions
+from langchain_core.documents import Document
+from .chunking import ChunkingStrategy, get_config_for_file
 
 # Default paths for Wikipedia index
 WIKI_INDEX_PATH = "data/wiki_index.pkl"
@@ -325,17 +327,19 @@ class LocalFileIndexer(BaseHybridIndexer):
 
         Args:
             directory_path: Directory to scan for files
-            extensions: File extensions to include (default: [".md", ".txt"])
+            extensions: File extensions to include (default: [".md", ".txt", ".py"])
         """
         super().__init__(collection_name="local_files", chroma_path=LOCAL_CHROMA_PATH)
         self.directory_path = directory_path
-        self.extensions = extensions if extensions else [".md", ".txt"]
+        self.extensions = extensions if extensions else [".md", ".txt", ".py"]
+        # チャンキング戦略クラスを初期化
+        self.chunker = ChunkingStrategy()
 
     def build_index(self):
         """
-        Build/rebuild hybrid index from local files.
+        Build/rebuild hybrid index from local files with Advanced Chunking.
         BM25 is rebuilt from scratch (fast for local files).
-        Vector index is updated with upsert.
+        Vector index uses advanced chunking for better semantic search.
         """
         # Import here to avoid circular dependency
         try:
@@ -344,50 +348,79 @@ class LocalFileIndexer(BaseHybridIndexer):
             from loaders import load_local_files
 
         print(f"Scanning local files in {self.directory_path}...", file=sys.stderr)
-        self.documents = load_local_files(self.directory_path, self.extensions)
+        raw_documents = load_local_files(self.directory_path, self.extensions)
 
-        if not self.documents:
+        if not raw_documents:
             print(f"No documents found in {self.directory_path}", file=sys.stderr)
             self.bm25 = None
             return
 
-        print(f"Found {len(self.documents)} local files", file=sys.stderr)
+        print(f"Found {len(raw_documents)} local files. Processing...", file=sys.stderr)
 
-        # Build BM25 index (in-memory, rebuilt each time)
-        print("Building BM25 index for local files...", file=sys.stderr)
+        # 1. BM25用: ファイル単位でインデックス（従来通り）
+        self.documents = raw_documents
         tokenized_corpus = [doc['text'].lower().split() for doc in self.documents]
         self.bm25 = BM25Okapi(tokenized_corpus)
 
-        # Build/update vector index
-        print("Updating vector index for local files...", file=sys.stderr)
+        # 2. Vector用: 高度なチャンキングを適用
+        print("Applying advanced chunking and updating vector index...", file=sys.stderr)
 
-        # Get or create collection
+        # ChromaDBコレクションの再作成
         try:
-            self.collection = self.chroma_client.get_collection(
-                name=self.collection_name,
-                embedding_function=self.emb_fn
-            )
+            self.chroma_client.delete_collection(name=self.collection_name)
         except:
-            self.collection = self.chroma_client.create_collection(
-                name=self.collection_name,
-                embedding_function=self.emb_fn
+            pass
+
+        self.collection = self.chroma_client.create_collection(
+            name=self.collection_name,
+            embedding_function=self.emb_fn
+        )
+
+        # 処理用リスト
+        chunk_ids = []
+        chunk_texts = []
+        chunk_metadatas = []
+
+        # ファイルごとに最適な戦略でチャンキング
+        for doc in tqdm(self.documents, desc="Chunking files", file=sys.stderr):
+            # 辞書型データをLangChainのDocumentオブジェクトに変換
+            lc_doc = Document(
+                page_content=doc['text'],
+                metadata={"title": doc['title'], "url": doc['url'], "path": doc.get('path', '')}
             )
 
-        # Upsert documents in batches (ChromaDB will update existing IDs)
-        batch_size = 100
-        ids = [doc['url'] for doc in self.documents]
-        docs = [doc['text'][:500] + "..." if len(doc['text']) > 500 else doc['text'] for doc in self.documents]
-        metadatas = [{"title": doc['title'], "url": doc['url'], "path": doc.get('path', '')} for doc in self.documents]
+            # ファイル名から最適な設定を取得（Markdownならヘッダー分割、Pythonならコード分割など）
+            config = get_config_for_file(doc.get('path', 'unknown.txt'))
 
-        for i in range(0, len(docs), batch_size):
-            batch_ids = ids[i:i+batch_size]
-            batch_docs = docs[i:i+batch_size]
-            batch_metadatas = metadatas[i:i+batch_size]
+            # 分割実行
+            chunks = self.chunker.chunk_documents([lc_doc], config)
 
-            self.collection.upsert(
-                ids=batch_ids,
-                documents=batch_docs,
-                metadatas=batch_metadatas
-            )
+            # 結果をリストに格納
+            for i, chunk in enumerate(chunks):
+                chunk_id = f"{doc['url']}#chunk{i}"
 
-        print(f"Local file index build complete. {len(self.documents)} files indexed.", file=sys.stderr)
+                chunk_ids.append(chunk_id)
+                chunk_texts.append(chunk.page_content)
+
+                # メタデータを整形（ヘッダー情報などがchunk.metadataに含まれている）
+                meta = chunk.metadata.copy()
+                meta['chunk_index'] = i
+                # ChromaDBはメタデータにNoneを許容しないため文字列化
+                for k, v in meta.items():
+                    if v is None: meta[k] = ""
+
+                chunk_metadatas.append(meta)
+
+        # バッチでChromaDBに追加
+        if chunk_texts:
+            batch_size = 50
+            print(f"Indexing {len(chunk_texts)} chunks to ChromaDB...", file=sys.stderr)
+            for i in range(0, len(chunk_texts), batch_size):
+                end = i + batch_size
+                self.collection.add(
+                    ids=chunk_ids[i:end],
+                    documents=chunk_texts[i:end],
+                    metadatas=chunk_metadatas[i:end]
+                )
+
+        print(f"Local file index complete. {len(self.documents)} files -> {len(chunk_texts)} chunks.", file=sys.stderr)
