@@ -210,3 +210,4 @@ __marimo__/
 data/*.pkl
 data/*.db
 data/chroma_db/
+data/local_chroma_db/
