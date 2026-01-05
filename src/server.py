@@ -67,10 +67,11 @@ def search_wikipedia(query: str, top_k: int = 3, strategy: str = "hybrid") -> st
     # Format results for readability
     formatted_results = []
     for i, doc in enumerate(results, 1):
+        search_method = doc.get('source', 'unknown')
         formatted_results.append(
-            f"[Result {i}]\n"
+            f"[Result {i}] ({search_method})\n"
             f"Title: {doc['title']}\n"
-            f"Source: {doc['url']}\n"
+            f"URL: {doc['url']}\n"
             f"Content: {doc['text']}\n"
         )
 

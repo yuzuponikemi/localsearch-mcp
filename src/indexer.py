@@ -231,7 +231,7 @@ class WikiIndexer:
 
     def hybrid_search(self, query: str, top_k: int = 3, strategy: Literal["keyword", "semantic", "hybrid"] = "hybrid") -> List[Dict]:
         """
-        Perform hybrid search combining BM25 and vector search.
+        Perform hybrid search combining BM25 and vector search using Reciprocal Rank Fusion (RRF).
 
         Args:
             query: Search query string
@@ -239,33 +239,51 @@ class WikiIndexer:
             strategy: Search strategy - 'keyword' (BM25 only), 'semantic' (vector only), or 'hybrid' (both)
 
         Returns:
-            List of document dictionaries with title, url, and text
+            List of document dictionaries with title, url, text, and source (bm25/vector/both)
         """
-        results = []
-        seen_urls = set()
+        # RRF constant (typical value is 60)
+        RRF_K = 60
+
+        # Store RRF scores and sources for each document
+        rrf_scores: Dict[str, float] = {}
+        doc_data: Dict[str, Dict] = {}
+        doc_sources: Dict[str, List[str]] = {}
 
         if strategy in ["keyword", "hybrid"]:
-            # Get BM25 results
             try:
                 bm25_results = self.search(query, top_k=top_k)
-                for doc in bm25_results:
-                    if doc['url'] not in seen_urls:
-                        results.append(doc)
-                        seen_urls.add(doc['url'])
+                for rank, doc in enumerate(bm25_results):
+                    url = doc['url']
+                    rrf_scores[url] = rrf_scores.get(url, 0) + 1 / (RRF_K + rank + 1)
+                    doc_data[url] = doc
+                    if url not in doc_sources:
+                        doc_sources[url] = []
+                    doc_sources[url].append("bm25")
             except ValueError as e:
                 print(f"BM25 search failed: {e}", file=sys.stderr)
 
         if strategy in ["semantic", "hybrid"]:
-            # Get vector search results
             try:
                 vector_results = self.vector_search(query, top_k=top_k)
-                for doc in vector_results:
-                    if doc['url'] not in seen_urls:
-                        results.append(doc)
-                        seen_urls.add(doc['url'])
+                for rank, doc in enumerate(vector_results):
+                    url = doc['url']
+                    rrf_scores[url] = rrf_scores.get(url, 0) + 1 / (RRF_K + rank + 1)
+                    doc_data[url] = doc
+                    if url not in doc_sources:
+                        doc_sources[url] = []
+                    doc_sources[url].append("vector")
             except ValueError as e:
                 print(f"Vector search failed: {e}", file=sys.stderr)
 
-        # Return top_k results (may be more if both searches returned unique results)
-        # For hybrid, we interleave results from both methods
-        return results[:top_k * 2 if strategy == "hybrid" else top_k]
+        # Sort by RRF score (descending) and take top_k
+        sorted_urls = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)[:top_k]
+
+        # Build final results with source information
+        results = []
+        for url in sorted_urls:
+            doc = doc_data[url].copy()
+            sources = doc_sources[url]
+            doc['source'] = "both" if len(sources) > 1 else sources[0]
+            results.append(doc)
+
+        return results
