@@ -13,10 +13,7 @@ from langchain_text_splitters import (
     Language,
 )
 
-try:
-    from .document_analyzer import DocumentAnalyzer
-except ImportError:
-    from document_analyzer import DocumentAnalyzer
+from src.document_analyzer import DocumentAnalyzer
 
 class ChunkingMethod(Enum):
     RECURSIVE = "recursive"

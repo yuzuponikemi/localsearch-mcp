@@ -6,11 +6,12 @@ Provides offline search via MCP protocol combining:
 Supports hybrid search: BM25 (keyword) + Vector (semantic) search.
 """
 import os
+from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
-try:
-    from .indexer import WikiIndexer, LocalFileIndexer
-except ImportError:
-    from indexer import WikiIndexer, LocalFileIndexer
+from src.indexer import WikiIndexer, LocalFileIndexer
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Initialize MCP server
 mcp = FastMCP("MultiSourceLocalSearch")

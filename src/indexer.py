@@ -14,11 +14,11 @@ from tqdm import tqdm
 import chromadb
 from chromadb.utils import embedding_functions
 from langchain_core.documents import Document
-from .chunking import ChunkingStrategy, get_config_for_file, get_smart_config
-from .document_analyzer import DocumentAnalyzer
-from .content_cleaner import ContentCleaner
-from .quality_metrics import QualityAnalyzer
-from .logger import logger
+from src.chunking import ChunkingStrategy, get_config_for_file, get_smart_config
+from src.document_analyzer import DocumentAnalyzer
+from src.content_cleaner import ContentCleaner
+from src.quality_metrics import QualityAnalyzer
+from src.logger import logger
 
 # Default paths for Wikipedia index
 WIKI_INDEX_PATH = "data/wiki_index.pkl"
@@ -352,10 +352,7 @@ class LocalFileIndexer(BaseHybridIndexer):
         5. Vector Indexing with structured logging
         """
         # Import here to avoid circular dependency
-        try:
-            from .loaders import load_local_files
-        except ImportError:
-            from loaders import load_local_files
+        from src.loaders import load_local_files
 
         logger.info(f"Scanning local files in {self.directory_path}")
         raw_documents = load_local_files(self.directory_path, self.extensions)
