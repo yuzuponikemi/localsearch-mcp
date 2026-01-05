@@ -66,10 +66,11 @@ def search_wikipedia(query: str, top_k: int = 3) -> str:
 
 
 if __name__ == "__main__":
+    import sys
     # Pre-load index before starting server
-    print("🚀 Starting Local Wikipedia Search MCP Server...")
+    print("🚀 Starting Local Wikipedia Search MCP Server...", file=sys.stderr)
     indexer.load_or_build()
-    print("✅ Server ready!\n")
+    print("✅ Server ready!\n", file=sys.stderr)
 
     # Start the MCP server
     mcp.run()

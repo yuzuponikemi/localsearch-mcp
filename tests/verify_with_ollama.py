@@ -83,6 +83,7 @@ async def run_ollama_agent():
                     result = await session.call_tool(fn_name, arguments=fn_args)
                     tool_output = result.content[0].text
                     print(f"   → Output length: {len(tool_output)} chars")
+                    print(f"   → Output: {tool_output}...")
 
                     # Append tool results to message history
                     messages.append(response.message)
