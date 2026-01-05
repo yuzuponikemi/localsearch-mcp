@@ -4,6 +4,7 @@ Handles loading local files (Markdown, text, etc.) for indexing.
 """
 import os
 import glob
+import sys
 from typing import List, Dict
 
 
@@ -24,11 +25,11 @@ def load_local_files(directory_path: str, extensions: List[str] = None) -> List[
     documents = []
 
     if not os.path.exists(directory_path):
-        print(f"Warning: Directory not found: {directory_path}")
+        print(f"Warning: Directory not found: {directory_path}", file=sys.stderr)
         return []
 
     if not os.path.isdir(directory_path):
-        print(f"Warning: Path is not a directory: {directory_path}")
+        print(f"Warning: Path is not a directory: {directory_path}", file=sys.stderr)
         return []
 
     for ext in extensions:
@@ -38,8 +39,19 @@ def load_local_files(directory_path: str, extensions: List[str] = None) -> List[
 
         for file_path in files:
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
+                # Try multiple encodings to handle various file types
+                content = None
+                for encoding in ['utf-8', 'utf-8-sig', 'cp932', 'shift-jis', 'iso-8859-1']:
+                    try:
+                        with open(file_path, "r", encoding=encoding) as f:
+                            content = f.read()
+                        break  # Successfully read the file
+                    except UnicodeDecodeError:
+                        continue  # Try next encoding
+
+                if content is None:
+                    print(f"Warning: Skipping file {file_path}: Unable to decode with supported encodings", file=sys.stderr)
+                    continue
 
                 # Skip empty files
                 if not content.strip():
@@ -58,6 +70,6 @@ def load_local_files(directory_path: str, extensions: List[str] = None) -> List[
                     "url": f"file://{file_path}"  # Compatible with existing result format
                 })
             except Exception as e:
-                print(f"Warning: Skipping file {file_path}: {e}")
+                print(f"Warning: Skipping file {file_path}: {e}", file=sys.stderr)
 
     return documents
