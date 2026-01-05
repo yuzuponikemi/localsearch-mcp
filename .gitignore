@@ -208,3 +208,5 @@ __marimo__/
 
 # Project specific
 data/*.pkl
+data/*.db
+data/chroma_db/

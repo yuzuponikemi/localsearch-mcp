@@ -136,6 +136,48 @@ class WikiIndexer:
 
         print(f"Vector index build complete. {self.collection.count()} documents in vector store.", file=sys.stderr)
 
+    def build_vector_index(self):
+        """Build only the vector index from existing BM25 documents.
+
+        Use this when BM25 index exists but vector index is missing.
+        Requires BM25 index to be loaded first (call load_or_build()).
+        """
+        if not self.documents:
+            raise ValueError("No documents loaded. Call load_or_build() first to load BM25 index.")
+
+        print(f"Building vector index from {len(self.documents)} existing documents...", file=sys.stderr)
+        print("(This may take a while for embedding generation)", file=sys.stderr)
+
+        # Create or recreate collection
+        try:
+            self.chroma_client.delete_collection(name="wikipedia")
+        except:
+            pass
+
+        self.collection = self.chroma_client.create_collection(
+            name="wikipedia",
+            embedding_function=self.emb_fn
+        )
+
+        # Add documents to ChromaDB in batches
+        batch_size = 100
+        ids = [doc['url'] for doc in self.documents]
+        docs = [doc['text'] for doc in self.documents]
+        metadatas = [{"title": doc['title'], "url": doc['url']} for doc in self.documents]
+
+        for i in tqdm(range(0, len(docs), batch_size), desc="Embedding documents", file=sys.stderr):
+            batch_ids = ids[i:i+batch_size]
+            batch_docs = docs[i:i+batch_size]
+            batch_metadatas = metadatas[i:i+batch_size]
+
+            self.collection.add(
+                ids=batch_ids,
+                documents=batch_docs,
+                metadatas=batch_metadatas
+            )
+
+        print(f"Vector index build complete. {self.collection.count()} documents in vector store.", file=sys.stderr)
+
     def search(self, query: str, top_k: int = 3):
         """
         Search the index using BM25 algorithm (keyword search).
