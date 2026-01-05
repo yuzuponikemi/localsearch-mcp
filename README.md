@@ -188,14 +188,21 @@ Then restart Claude Desktop and you can search both Wikipedia and your personal 
 localsearch-mcp/
 ├── pyproject.toml          # Dependencies and project metadata
 ├── README.md               # This file
+├── .env.example            # Environment variable configuration example
 ├── data/                   # Index storage (created on first run)
 │   ├── .gitkeep
-│   └── wiki_index.pkl      # BM25 index (not in git)
+│   ├── wiki_index.pkl      # Wikipedia BM25 index (cached)
+│   ├── chroma_db/          # Wikipedia vector index
+│   └── local_chroma_db/    # Local files vector index
 ├── src/
 │   ├── __init__.py
 │   ├── __main__.py         # Entry point for `python -m src`
 │   ├── server.py           # MCP server implementation
-│   └── indexer.py          # BM25 indexing logic
+│   ├── indexer.py          # Multi-source hybrid indexing
+│   └── loaders.py          # Local file loaders
+├── test_notes/             # Sample test files
+│   ├── secret_project.md
+│   └── meeting_notes.md
 └── tests/
     ├── __init__.py
     └── verify_with_ollama.py  # Ollama integration test client
@@ -336,16 +343,49 @@ MIT License - see LICENSE file for details
 
 ## 概要
 
-ローカル環境で動作する Wikipedia 検索 MCP サーバーです。外部 API に依存せず、完全にオフラインで動作します。
+ローカル環境で動作するマルチソース検索 MCP サーバーです。**Wikipedia（静的で大規模な知識）**と**ローカルファイル（動的で個人的な知識）**の両方を検索でき、外部 API に依存せず完全にオフラインで動作します。
 
 ## 特徴
 
+- **マルチソース検索**: Wikipedia とローカルファイル（Markdown、テキスト）を同時に検索可能
 - **ハイブリッド検索**: BM25（キーワード検索）+ ベクトル埋め込み（意味検索）の組み合わせで最高の結果を提供
+- **スマートインデックス**: Wikipedia は永続キャッシュ、ローカルファイルは起動時にスキャンして最新状態を反映
 - **完全オフライン**: インターネット接続不要
 - **無料・高速**: キーワードと意味の両方に対応した効率的な検索アルゴリズム
 - **MCP 互換**: Claude Desktop などの MCP 対応クライアントで使用可能
 - **Ollama 統合**: Ollama を使ったテストクライアント付属
 - **簡単セットアップ**: `uv` による簡単インストール
+
+## アーキテクチャ
+
+```
+┌─────────────┐         ┌──────────────────┐         ┌─────────────┐
+│   Ollama    │ ◄────── │  MCP Client      │ ◄────── │   Human     │
+│   (LLM)     │         │  (test script)   │         │             │
+└─────────────┘         └──────────────────┘         └─────────────┘
+                                │
+                                │ MCP Protocol
+                                ▼
+                        ┌──────────────────┐
+                        │  MCP Server      │
+                        │  (src/server.py) │
+                        └──────────────────┘
+                                │
+                   ┌────────────┴────────────┐
+                   ▼                         ▼
+         ┌──────────────────┐      ┌──────────────────┐
+         │ Wikipedia Indexer│      │ Local File       │
+         │ (静的/キャッシュ)│      │ Indexer (動的)   │
+         └──────────────────┘      └──────────────────┘
+                   │                         │
+                   ▼                         ▼
+         ┌──────────────────┐      ┌──────────────────┐
+         │ BM25 + Vector DB │      │ BM25 + Vector DB │
+         │ (100万件以上)    │      │ (あなたのファイル)│
+         └──────────────────┘      └──────────────────┘
+```
+
+**Composite Pattern**: 両方のソースからの結果を Reciprocal Rank Fusion (RRF) でマージして最適なランキングを実現
 
 ## インストール
 
@@ -383,18 +423,36 @@ uv run python -m src
 
 初回構築はドキュメントのダウンロードと埋め込み生成を行うため時間がかかります。デフォルト: 100万記事（約5GB）。完全版: 680万記事（約20GB）。
 
+4. (オプション) ローカルファイル検索を有効化:
+```bash
+# ローカルドキュメントのパスを設定
+export LOCAL_DOCS_PATH="/path/to/your/notes"  # 例: ~/ObsidianVault/Research
+```
+
+これにより以下のファイルを検索できるようになります：
+- Markdown ファイル (`.md`)
+- テキストファイル (`.txt`)
+- 個人的なノートやドキュメント
+
+サーバーは起動時にこのディレクトリをスキャンして最新の内容をインデックス化します。
+
 ## 使い方
 
 ### MCP サーバーの起動
 
 ```bash
-uv run src/server.py
+# ローカルファイルなしで起動
+uv run python -m src
+
+# ローカルファイルありで起動
+LOCAL_DOCS_PATH="/path/to/your/notes" uv run python -m src
 ```
 
 サーバーは以下を実行します：
-1. 構築済み Wikipedia インデックスを読み込み
-2. 標準入出力で MCP リクエストを待機
-3. `search_wikipedia` ツールを提供
+1. 構築済み Wikipedia インデックスを読み込み（キャッシュから高速読み込み）
+2. `LOCAL_DOCS_PATH` が設定されている場合、ローカルファイルをスキャンしてインデックス化（通常は数秒）
+3. 標準入出力で MCP リクエストを待機
+4. 検索ツールを提供: `search`、`search_wikipedia`、`search_local`
 
 ### Ollama を使ったテスト
 
@@ -419,29 +477,53 @@ uv run tests/verify_with_ollama.py
 
 Claude Desktop の MCP 設定に以下を追加:
 
+**Wikipedia のみ:**
 ```json
 {
   "mcpServers": {
-    "local-wiki-search": {
+    "local-search": {
       "command": "uv",
-      "args": ["run", "/絶対パス/localsearch-mcp/src/server.py"]
+      "args": ["run", "python", "-m", "src"],
+      "cwd": "/path/to/localsearch-mcp"
     }
   }
 }
 ```
 
-Claude Desktop を再起動すると、会話内で Wikipedia 検索が使えるようになります。
+**Wikipedia + ローカルファイル:**
+```json
+{
+  "mcpServers": {
+    "local-search": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "src"],
+      "cwd": "/path/to/localsearch-mcp",
+      "env": {
+        "LOCAL_DOCS_PATH": "/Users/yourname/Documents/Notes"
+      }
+    }
+  }
+}
+```
+
+Claude Desktop を再起動すると、会話内で Wikipedia と個人ファイルの両方を検索できるようになります！
 
 ## 利用可能なツール
 
-### `search_wikipedia`
+### `search` (マルチソース)
 
-ハイブリッド検索（BM25 + ベクトル埋め込み）を使って Wikipedia を検索します。
+Wikipedia とローカルファイルの両方をハイブリッド検索で同時に検索します。
 
 **パラメータ:**
 - `query` (文字列, 必須): 検索キーワードまたは質問
-- `top_k` (整数, オプション): 返す結果の数（デフォルト: 3、最大: 10）
+- `top_k` (整数, オプション): ソースごとに返す結果の数（デフォルト: 5、最大: 20）
 - `strategy` (文字列, オプション): 検索戦略 - `"hybrid"` (デフォルト)、`"keyword"`、または `"semantic"`
+- `source` (文字列, オプション): データソース - `"all"` (デフォルト)、`"wikipedia"`、または `"local"`
+
+**ソースオプション:**
+- **`"all"`** (デフォルト): Wikipedia とローカルファイルの両方を検索して包括的な結果を取得
+- **`"wikipedia"`**: Wikipedia のみ検索（一般知識）
+- **`"local"`**: ローカルファイルのみ検索（個人知識）
 
 **検索戦略:**
 - **`"hybrid"`** (推奨): キーワード検索と意味検索を組み合わせて最良の結果を提供
@@ -449,7 +531,25 @@ Claude Desktop を再起動すると、会話内で Wikipedia 検索が使える
 - **`"semantic"`**: ベクトル類似度検索（単語が一致しなくても概念的に類似したコンテンツを検索）
 
 **戻り値:**
-タイトル、URL、本文スニペットを含む検索結果
+タイトル、URL/パス、本文スニペットを含む検索結果。両方のソースからの結果は Reciprocal Rank Fusion (RRF) でインテリジェントにマージされます。
+
+### `search_wikipedia`
+
+Wikipedia のみをハイブリッド検索（BM25 + ベクトル埋め込み）で検索します。`search` の `source="wikipedia"` のラッパーです。
+
+**パラメータ:**
+- `query` (文字列, 必須): 検索キーワードまたは質問
+- `top_k` (整数, オプション): 返す結果の数（デフォルト: 3、最大: 10）
+- `strategy` (文字列, オプション): 検索戦略 - `"hybrid"` (デフォルト)、`"keyword"`、または `"semantic"`
+
+### `search_local`
+
+ローカルファイルのみをハイブリッド検索で検索します。`search` の `source="local"` のラッパーです。
+
+**パラメータ:**
+- `query` (文字列, 必須): 検索キーワードまたは質問
+- `top_k` (整数, オプション): 返す結果の数（デフォルト: 5、最大: 20）
+- `strategy` (文字列, オプション): 検索戦略 - `"hybrid"` (デフォルト)、`"keyword"`、または `"semantic"`
 
 ## カスタマイズ
 
