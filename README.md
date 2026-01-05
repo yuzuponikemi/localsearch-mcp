@@ -6,8 +6,9 @@ A standalone, offline Wikipedia search server implementing the Model Context Pro
 
 ## Features
 
+- **Hybrid Search**: Combines BM25 (keyword matching) + Vector embeddings (semantic similarity) for best results
 - **Completely Offline**: No external API dependencies (Google Search, etc.)
-- **Free & Fast**: Uses BM25 algorithm for efficient full-text search
+- **Free & Fast**: Uses efficient algorithms for both keyword and semantic search
 - **MCP Compatible**: Works with any MCP-compatible client (Claude Desktop, etc.)
 - **Ollama Integration**: Includes test client for Ollama-based agents
 - **Easy Setup**: Simple installation with `uv` package manager
@@ -28,10 +29,14 @@ A standalone, offline Wikipedia search server implementing the Model Context Pro
                         └──────────────────┘
                                 │
                                 ▼
-                        ┌──────────────────┐
-                        │  BM25 Index      │
-                        │  (Wikipedia)     │
-                        └──────────────────┘
+                  ┌─────────────────────────────┐
+                  │   Hybrid Search Engine      │
+                  ├─────────────────────────────┤
+                  │  BM25 Index (Keyword)       │
+                  │  +                          │
+                  │  Vector DB (Semantic)       │
+                  │  ChromaDB + all-MiniLM-L6   │
+                  └─────────────────────────────┘
 ```
 
 ## Installation
@@ -57,11 +62,18 @@ uv sync
 
 3. Build the Wikipedia index (first run only):
 ```bash
+# Set smaller subset for testing (optional)
+export WIKI_SUBSET_SIZE=10000  # Default: 1,000,000
+
 uv run python -m src
 # Press Ctrl+C after index is built
 ```
 
-This will download English Wikipedia (~6.8M articles, ~20GB) and create a BM25 index in the `data/` directory. The initial build takes significant time and disk space.
+This will download English Wikipedia and create:
+- **BM25 index** (keyword search) in `data/wiki_index.pkl`
+- **Vector index** (semantic search) in `data/chroma_db/`
+
+The initial build downloads documents and generates embeddings, which takes time. Default: 1M articles (~5GB). Full dataset: 6.8M articles (~20GB).
 
 ## Usage
 
@@ -151,21 +163,39 @@ localsearch-mcp/
 
 ### `search_wikipedia`
 
-Search English Wikipedia for a given query using BM25 algorithm.
+Search English Wikipedia for a given query using hybrid search (BM25 + Vector embeddings).
 
 **Parameters:**
-- `query` (string, required): Search keywords
+- `query` (string, required): Search keywords or question
 - `top_k` (integer, optional): Number of results to return (default: 3, max: 10)
+- `strategy` (string, optional): Search strategy - `"hybrid"` (default), `"keyword"`, or `"semantic"`
+
+**Search Strategies:**
+- **`"hybrid"`** (recommended): Combines keyword matching and semantic similarity for best results
+- **`"keyword"`**: Traditional BM25 keyword search (exact word matching, fast)
+- **`"semantic"`**: Vector similarity search (finds conceptually similar content, even without exact words)
 
 **Returns:**
 Formatted search results with titles, Wikipedia URLs, and content snippets.
 
-**Example:**
+**Examples:**
 ```python
-# MCP tool call
+# Hybrid search (best results, default)
 result = await session.call_tool(
     "search_wikipedia",
     arguments={"query": "python programming language", "top_k": 3}
+)
+
+# Keyword-only search (fast, exact matches)
+result = await session.call_tool(
+    "search_wikipedia",
+    arguments={"query": "python programming language", "strategy": "keyword"}
+)
+
+# Semantic search (finds similar concepts)
+result = await session.call_tool(
+    "search_wikipedia",
+    arguments={"query": "snake that inspired a programming language", "strategy": "semantic"}
 )
 ```
 
@@ -244,8 +274,9 @@ MIT License - see LICENSE file for details
 
 ## 特徴
 
+- **ハイブリッド検索**: BM25（キーワード検索）+ ベクトル埋め込み（意味検索）の組み合わせで最高の結果を提供
 - **完全オフライン**: インターネット接続不要
-- **無料・高速**: BM25 アルゴリズムによる効率的な全文検索
+- **無料・高速**: キーワードと意味の両方に対応した効率的な検索アルゴリズム
 - **MCP 互換**: Claude Desktop などの MCP 対応クライアントで使用可能
 - **Ollama 統合**: Ollama を使ったテストクライアント付属
 - **簡単セットアップ**: `uv` による簡単インストール
@@ -273,11 +304,18 @@ uv sync
 
 3. Wikipedia インデックスを構築（初回のみ）:
 ```bash
+# テスト用に小さいサブセットを使用（オプション）
+export WIKI_SUBSET_SIZE=10000  # デフォルト: 1,000,000
+
 uv run python -m src
 # インデックス構築後 Ctrl+C で終了
 ```
 
-これにより英語版 Wikipedia（約680万記事、約20GB）がダウンロードされ、`data/` ディレクトリに BM25 インデックスが作成されます。初回構築には時間とディスク容量が必要です。
+これにより以下が作成されます：
+- **BM25 インデックス**（キーワード検索）: `data/wiki_index.pkl`
+- **ベクトルインデックス**（意味検索）: `data/chroma_db/`
+
+初回構築はドキュメントのダウンロードと埋め込み生成を行うため時間がかかります。デフォルト: 100万記事（約5GB）。完全版: 680万記事（約20GB）。
 
 ## 使い方
 
@@ -332,11 +370,17 @@ Claude Desktop を再起動すると、会話内で Wikipedia 検索が使える
 
 ### `search_wikipedia`
 
-BM25 アルゴリズムを使って Wikipedia を検索します。
+ハイブリッド検索（BM25 + ベクトル埋め込み）を使って Wikipedia を検索します。
 
 **パラメータ:**
-- `query` (文字列, 必須): 検索キーワード
+- `query` (文字列, 必須): 検索キーワードまたは質問
 - `top_k` (整数, オプション): 返す結果の数（デフォルト: 3、最大: 10）
+- `strategy` (文字列, オプション): 検索戦略 - `"hybrid"` (デフォルト)、`"keyword"`、または `"semantic"`
+
+**検索戦略:**
+- **`"hybrid"`** (推奨): キーワード検索と意味検索を組み合わせて最良の結果を提供
+- **`"keyword"`**: 従来の BM25 キーワード検索（完全一致、高速）
+- **`"semantic"`**: ベクトル類似度検索（単語が一致しなくても概念的に類似したコンテンツを検索）
 
 **戻り値:**
 タイトル、URL、本文スニペットを含む検索結果
