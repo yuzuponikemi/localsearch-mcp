@@ -115,17 +115,42 @@ The server will:
 
 ### Testing with Ollama
 
-#### Simple Test (No LLM)
+#### Simple Test (Wikipedia Search, No LLM)
 ```bash
 uv run tests/verify_with_ollama.py --simple
 ```
 
-This tests the MCP connection and performs a direct search.
+This tests the MCP connection and performs a direct Wikipedia search.
+
+#### Local Document Search Test (No LLM)
+```bash
+uv run tests/verify_with_ollama.py --local
+```
+
+This tests the local file search capability with domain-specific queries. By default, it uses VisionSort/Casper KB documents as the test dataset.
+
+Example output:
+```
+🧪 Running Local Document Search Test (VisionSort/Casper KB)...
+📁 Local docs path: /Users/ikmx/source/tc/Casper_KB-main
+
+✅ Available tools: ['search', 'search_wikipedia', 'search_local']
+
+--- Test 1: VisionSort 405nmレーザーの出力 ---
+🔍 Query: VisionSort 405nm laser output power mW
+📋 Expected: 365 mW
+✅ PASS: Expected answer found in results!
+
+--- Test 2: エラーコード4015の意味と対処法 ---
+🔍 Query: FluidicSystem error code 4015 CL Leak
+📋 Expected: Emergency level, chip holder leak
+✅ PASS: Related document found!
+```
 
 #### Full Agent Test (Requires Ollama)
 ```bash
 # Make sure Ollama is running with a tool-compatible model
-ollama pull command-r
+ollama pull llama3.2
 ollama serve
 
 # In another terminal:
@@ -135,7 +160,7 @@ uv run tests/verify_with_ollama.py
 Expected output:
 ```
 🤖 Starting MCP Client and connecting to Local Search Server...
-✅ Connected. Available tools: ['search_wikipedia']
+✅ Connected. Available tools: ['search', 'search_wikipedia', 'search_local']
 
 👤 User Query: Pythonというプログラミング言語の歴史について、簡潔に教えて
 🛠️  Agent requested 1 tool call(s)
@@ -302,11 +327,31 @@ ds = load_dataset("wikimedia/wikipedia", "20231101.en", split="train[:1000]")
 
 ### Running Tests
 ```bash
-# Simple MCP connection test
+# Simple MCP connection test (Wikipedia search)
 uv run tests/verify_with_ollama.py --simple
+
+# Local document search test (VisionSort/Casper KB)
+uv run tests/verify_with_ollama.py --local
 
 # Full Ollama agent test
 uv run tests/verify_with_ollama.py
+```
+
+### Test Options
+
+| Option | Description |
+|--------|-------------|
+| `--simple` | Tests MCP connection with Wikipedia search (no LLM required) |
+| `--local` | Tests local document search with domain-specific queries |
+| (none) | Full agent test with Ollama LLM |
+
+### Customizing Local Document Path
+
+Edit `tests/verify_with_ollama.py` to change the default local documents path:
+
+```python
+# Local documents path for VisionSort/Casper KB
+LOCAL_DOCS_PATH = "/path/to/your/documents"
 ```
 
 ### Rebuilding Index
@@ -456,12 +501,32 @@ LOCAL_DOCS_PATH="/path/to/your/notes" uv run python -m src
 
 ### Ollama を使ったテスト
 
-#### シンプルテスト（LLM なし）
+#### シンプルテスト（Wikipedia 検索、LLM なし）
 ```bash
 uv run tests/verify_with_ollama.py --simple
 ```
 
-MCP 接続と検索機能をテストします。
+MCP 接続と Wikipedia 検索機能をテストします。
+
+#### ローカルドキュメント検索テスト（LLM なし）
+```bash
+uv run tests/verify_with_ollama.py --local
+```
+
+ローカルファイル検索機能をドメイン固有のクエリでテストします。デフォルトでは VisionSort/Casper KB ドキュメントをテストデータセットとして使用します。
+
+出力例:
+```
+🧪 Running Local Document Search Test (VisionSort/Casper KB)...
+📁 Local docs path: /Users/ikmx/source/tc/Casper_KB-main
+
+✅ Available tools: ['search', 'search_wikipedia', 'search_local']
+
+--- Test 1: VisionSort 405nmレーザーの出力 ---
+🔍 Query: VisionSort 405nm laser output power mW
+📋 Expected: 365 mW
+✅ PASS: Expected answer found in results!
+```
 
 #### エージェントテスト（Ollama 必要）
 ```bash
