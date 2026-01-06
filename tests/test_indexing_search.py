@@ -42,7 +42,12 @@ async def test_mcp_connection():
         server_params = StdioServerParameters(
             command="uv",
             args=["run", "python", "-m", "src"],
-            env={**os.environ.copy(), "PYTHONPATH": PROJECT_ROOT, "LOCAL_DOCS_PATH": TEST_DOCS_PATH},
+            env={
+                **os.environ.copy(),
+                "PYTHONPATH": PROJECT_ROOT,
+                "LOCAL_DOCS_PATH": TEST_DOCS_PATH,
+                "SKIP_WIKIPEDIA": "true"
+            },
             cwd=PROJECT_ROOT
         )
 
@@ -75,7 +80,12 @@ async def test_local_indexing():
         server_params = StdioServerParameters(
             command="uv",
             args=["run", "python", "-m", "src"],
-            env={**os.environ.copy(), "PYTHONPATH": PROJECT_ROOT, "LOCAL_DOCS_PATH": TEST_DOCS_PATH},
+            env={
+                **os.environ.copy(),
+                "PYTHONPATH": PROJECT_ROOT,
+                "LOCAL_DOCS_PATH": TEST_DOCS_PATH,
+                "SKIP_WIKIPEDIA": "true"
+            },
             cwd=PROJECT_ROOT
         )
 
@@ -110,7 +120,12 @@ async def test_search_results():
         server_params = StdioServerParameters(
             command="uv",
             args=["run", "python", "-m", "src"],
-            env={**os.environ.copy(), "PYTHONPATH": PROJECT_ROOT, "LOCAL_DOCS_PATH": TEST_DOCS_PATH},
+            env={
+                **os.environ.copy(),
+                "PYTHONPATH": PROJECT_ROOT,
+                "LOCAL_DOCS_PATH": TEST_DOCS_PATH,
+                "SKIP_WIKIPEDIA": "true"
+            },
             cwd=PROJECT_ROOT
         )
 
@@ -181,7 +196,12 @@ async def test_incremental_indexing():
             server_params = StdioServerParameters(
                 command="uv",
                 args=["run", "python", "-m", "src"],
-                env={**os.environ.copy(), "PYTHONPATH": PROJECT_ROOT, "LOCAL_DOCS_PATH": temp_dir},
+                env={
+                    **os.environ.copy(),
+                    "PYTHONPATH": PROJECT_ROOT,
+                    "LOCAL_DOCS_PATH": temp_dir,
+                    "SKIP_WIKIPEDIA": "true"
+                },
                 cwd=PROJECT_ROOT
             )
 
@@ -257,7 +277,12 @@ async def test_search_strategies():
         server_params = StdioServerParameters(
             command="uv",
             args=["run", "python", "-m", "src"],
-            env={**os.environ.copy(), "PYTHONPATH": PROJECT_ROOT, "LOCAL_DOCS_PATH": TEST_DOCS_PATH},
+            env={
+                **os.environ.copy(),
+                "PYTHONPATH": PROJECT_ROOT,
+                "LOCAL_DOCS_PATH": TEST_DOCS_PATH,
+                "SKIP_WIKIPEDIA": "true"
+            },
             cwd=PROJECT_ROOT
         )
 

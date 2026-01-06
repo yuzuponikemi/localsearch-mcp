@@ -344,7 +344,10 @@ This project has two types of tests:
 These tests run automatically in GitHub Actions and require no LLM:
 
 ```bash
-# Run the full CI/CD test suite
+# Run the full CI/CD test suite (with local files only, fast)
+SKIP_WIKIPEDIA=true uv run python tests/test_indexing_search.py
+
+# Run with Wikipedia indexing (requires ~500MB disk space and internet)
 uv run python tests/test_indexing_search.py
 ```
 
@@ -688,7 +691,10 @@ ds = load_dataset("wikipedia", "20231101.en", split="train")
 GitHub Actions で自動的に実行され、LLM は不要です：
 
 ```bash
-# CI/CD テストスイートの実行
+# CI/CD テストスイートの実行（ローカルファイルのみ、高速）
+SKIP_WIKIPEDIA=true uv run python tests/test_indexing_search.py
+
+# Wikipedia インデックスありで実行（約500MBのディスク容量とインターネット接続が必要）
 uv run python tests/test_indexing_search.py
 ```
 

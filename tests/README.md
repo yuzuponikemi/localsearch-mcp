@@ -22,6 +22,10 @@ Tests that run automatically in CI/CD pipelines:
 
 **Run**:
 ```bash
+# Run with local files only (skips Wikipedia download)
+SKIP_WIKIPEDIA=true uv run python tests/test_indexing_search.py
+
+# Run with Wikipedia (requires internet and disk space)
 uv run python tests/test_indexing_search.py
 ```
 
