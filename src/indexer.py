@@ -7,11 +7,18 @@ import os
 import pickle
 import sys
 from typing import List, Dict, Literal
+from collections import Counter
 from datasets import load_dataset
 from rank_bm25 import BM25Okapi
 from tqdm import tqdm
 import chromadb
 from chromadb.utils import embedding_functions
+from langchain_core.documents import Document
+from src.chunking import ChunkingStrategy, get_config_for_file, get_smart_config
+from src.document_analyzer import DocumentAnalyzer
+from src.content_cleaner import ContentCleaner
+from src.quality_metrics import QualityAnalyzer
+from src.logger import logger
 
 # Default paths for Wikipedia index
 WIKI_INDEX_PATH = "data/wiki_index.pkl"
@@ -45,7 +52,7 @@ class BaseHybridIndexer:
         # Use lightweight embedding model (all-MiniLM-L6-v2)
         # Fast on CPU, good quality for semantic search
         self.emb_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
+            model_name="intfloat/multilingual-e5-large"
         )
 
         self.collection_name = collection_name
@@ -329,75 +336,202 @@ class LocalFileIndexer(BaseHybridIndexer):
 
         Args:
             directory_path: Directory to scan for files
-            extensions: File extensions to include (default: [".md", ".txt"])
+            extensions: File extensions to include (default: [".md", ".txt", ".py"])
         """
         super().__init__(collection_name="local_files", chroma_path=LOCAL_CHROMA_PATH)
         self.directory_path = directory_path
-        self.extensions = extensions if extensions else [".md", ".txt"]
+        self.extensions = extensions if extensions else [".md", ".txt", ".py"]
+        # チャンキング戦略クラスを初期化
+        self.chunker = ChunkingStrategy()
 
     def build_index(self):
         """
-        Build/rebuild hybrid index from local files.
-        BM25 is rebuilt from scratch (fast for local files).
-        Vector index is updated with upsert.
+        Build/rebuild hybrid index from local files with Intelligent Preprocessing Pipeline.
+
+        Pipeline stages:
+        1. Document Analysis (quality scoring, language detection)
+        2. Smart Chunking (adaptive sizing, language-aware)
+        3. Content Cleaning (deduplication, boilerplate removal)
+        4. Quality Metrics (size distribution, uniqueness, diversity)
+        5. Vector Indexing with structured logging
         """
         # Import here to avoid circular dependency
-        try:
-            from .loaders import load_local_files
-        except ImportError:
-            from loaders import load_local_files
+        from src.loaders import load_local_files
 
-        print(f"Scanning local files in {self.directory_path}...", file=sys.stderr)
-        self.documents = load_local_files(self.directory_path, self.extensions)
+        logger.info(f"Scanning local files in {self.directory_path}")
+        raw_documents = load_local_files(self.directory_path, self.extensions)
 
-        if not self.documents:
-            print(f"No documents found in {self.directory_path}", file=sys.stderr)
+        if not raw_documents:
+            logger.warning(f"No documents found in {self.directory_path}")
             self.bm25 = None
             return
 
-        print(f"Found {len(self.documents)} local files", file=sys.stderr)
+        logger.info(f"Found {len(raw_documents)} local files", total_files=len(raw_documents))
 
-        # Build BM25 index (in-memory, rebuilt each time)
-        print("Building BM25 index for local files...", file=sys.stderr)
+        # Initialize pipeline components
+        analyzer = DocumentAnalyzer()
+        cleaner = ContentCleaner()
+        quality_analyzer = QualityAnalyzer()
+
+        # 1. BM25用: ファイル単位でインデックス（従来通り）
+        self.documents = raw_documents
         tokenized_corpus = [doc['text'].lower().split() for doc in self.documents]
         self.bm25 = BM25Okapi(tokenized_corpus)
 
-        # Build/update vector index
-        print("Updating vector index for local files...", file=sys.stderr)
+        # 2. Document Analysis & Smart Chunking
+        logger.info("Stage 1/4: Analyzing documents and applying smart chunking")
 
-        # Get or create collection
+        # ChromaDBコレクションの再作成
         try:
-            self.collection = self.chroma_client.get_collection(
-                name=self.collection_name,
-                embedding_function=self.emb_fn
-            )
+            self.chroma_client.delete_collection(name=self.collection_name)
         except:
-            self.collection = self.chroma_client.create_collection(
-                name=self.collection_name,
-                embedding_function=self.emb_fn
+            pass
+
+        self.collection = self.chroma_client.create_collection(
+            name=self.collection_name,
+            embedding_function=self.emb_fn
+        )
+
+        all_chunks = []
+        doc_analyses = []
+        language_counts = Counter()
+
+        # Process each document with progress tracking
+        for idx, doc in enumerate(tqdm(self.documents, desc="Analyzing & Chunking", file=sys.stderr)):
+            # Analyze document
+            analysis = analyzer.analyze(doc['text'], doc.get('path', ''))
+            doc_analyses.append(analysis)
+            language_counts[analysis.language] += 1
+
+            # Log progress
+            if idx % 10 == 0:
+                logger.log_progress(
+                    stage="document_analysis",
+                    current=idx + 1,
+                    total=len(self.documents),
+                    metrics={
+                        "avg_quality": f"{sum(a.quality_score for a in doc_analyses) / len(doc_analyses):.3f}",
+                        "languages_detected": len(language_counts)
+                    }
+                )
+
+            # Smart chunking with language-aware sizing
+            lc_doc = Document(
+                page_content=doc['text'],
+                metadata={
+                    "title": doc['title'],
+                    "url": doc['url'],
+                    "path": doc.get('path', ''),
+                    "quality_score": analysis.quality_score,
+                    "language": analysis.language
+                }
             )
 
-        # Upsert documents in batches (ChromaDB will update existing IDs)
-        # Use full text for vector indexing (with reasonable limit for embedding model)
-        # all-MiniLM-L6-v2 can handle ~256 tokens, approximately 1500-2000 chars
-        MAX_CHARS_FOR_EMBEDDING = 2000
-        batch_size = 100
-        ids = [doc['url'] for doc in self.documents]
-        docs = [
-            doc['text'][:MAX_CHARS_FOR_EMBEDDING] + ("..." if len(doc['text']) > MAX_CHARS_FOR_EMBEDDING else "")
-            for doc in self.documents
-        ]
-        metadatas = [{"title": doc['title'], "url": doc['url'], "path": doc.get('path', '')} for doc in self.documents]
-
-        for i in range(0, len(docs), batch_size):
-            batch_ids = ids[i:i+batch_size]
-            batch_docs = docs[i:i+batch_size]
-            batch_metadatas = metadatas[i:i+batch_size]
-
-            self.collection.upsert(
-                ids=batch_ids,
-                documents=batch_docs,
-                metadatas=batch_metadatas
+            # Get smart config (language-aware, content-aware)
+            config = get_smart_config(
+                filename=doc.get('path', 'unknown.txt'),
+                text_content=doc['text']
             )
 
-        print(f"Local file index build complete. {len(self.documents)} files indexed.", file=sys.stderr)
+            # Apply chunking
+            chunks = self.chunker.chunk_documents([lc_doc], config)
+
+            # Add chunk index to metadata
+            for i, chunk in enumerate(chunks):
+                chunk.metadata['chunk_index'] = i
+                chunk.metadata['chunking_method'] = config.method.value
+                chunk.metadata['detected_language'] = config.detected_language
+                chunk.metadata['language_multiplier'] = str(config.language_multiplier)
+
+            all_chunks.extend(chunks)
+
+        logger.info(
+            f"Chunking complete",
+            total_chunks_before_cleaning=len(all_chunks),
+            avg_chunks_per_doc=f"{len(all_chunks)/len(self.documents):.1f}"
+        )
+
+        # 3. Content Cleaning
+        logger.info("Stage 2/4: Cleaning content (deduplication, boilerplate removal)")
+
+        cleaned_chunks, cleaning_stats = cleaner.clean_chunks(all_chunks, detect_boilerplate=True)
+
+        logger.info(
+            "Content cleaning complete",
+            exact_duplicates_removed=cleaning_stats.exact_duplicates_removed,
+            near_duplicates_removed=cleaning_stats.near_duplicates_removed,
+            boilerplate_removed=cleaning_stats.boilerplate_removed,
+            too_small_removed=cleaning_stats.too_small_removed,
+            uniqueness_ratio=f"{cleaning_stats.uniqueness_ratio:.3f}",
+            chunks_remaining=cleaning_stats.total_output
+        )
+
+        # 4. Quality Metrics
+        logger.info("Stage 3/4: Computing quality metrics")
+
+        metrics = quality_analyzer.analyze(cleaned_chunks)
+
+        logger.info("Quality metrics computed", **metrics.to_dict())
+
+        # 5. Vector Indexing with Progress
+        logger.info("Stage 4/4: Indexing chunks to vector database")
+
+        chunk_ids = []
+        chunk_texts = []
+        chunk_metadatas = []
+
+        for i, chunk in enumerate(cleaned_chunks):
+            chunk_id = f"{chunk.metadata.get('url', 'unknown')}#chunk{chunk.metadata.get('chunk_index', i)}"
+            chunk_ids.append(chunk_id)
+            chunk_texts.append(chunk.page_content)
+
+            # Clean metadata for ChromaDB (no None values)
+            meta = chunk.metadata.copy()
+            for k, v in meta.items():
+                if v is None:
+                    meta[k] = ""
+                elif not isinstance(v, (str, int, float, bool)):
+                    meta[k] = str(v)
+
+            chunk_metadatas.append(meta)
+
+        # Batch insert with progress logging
+        if chunk_texts:
+            batch_size = 50
+            total_batches = (len(chunk_texts) + batch_size - 1) // batch_size
+
+            for batch_idx, i in enumerate(range(0, len(chunk_texts), batch_size)):
+                end = min(i + batch_size, len(chunk_texts))
+
+                self.collection.add(
+                    ids=chunk_ids[i:end],
+                    documents=chunk_texts[i:end],
+                    metadatas=chunk_metadatas[i:end]
+                )
+
+                # Log progress every 10 batches
+                if batch_idx % 10 == 0:
+                    logger.log_progress(
+                        stage="vector_indexing",
+                        current=end,
+                        total=len(chunk_texts),
+                        metrics={"batch_size": batch_size}
+                    )
+
+        # Final summary
+        avg_quality = sum(a.quality_score for a in doc_analyses) / len(doc_analyses) if doc_analyses else 0.0
+
+        logger.log_document_stats(
+            total_docs=len(self.documents),
+            total_chunks=len(chunk_texts),
+            avg_quality=avg_quality,
+            unique_ratio=cleaning_stats.uniqueness_ratio,
+            languages=dict(language_counts)
+        )
+
+        logger.info(
+            "Local file index build complete",
+            files=len(self.documents),
+            chunks=len(chunk_texts),
+            avg_quality_score=f"{avg_quality:.3f}"
+        )
