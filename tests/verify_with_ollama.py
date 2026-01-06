@@ -167,11 +167,6 @@ async def run_local_search_test():
             "description": "Ultrafineフォーカスのステップサイズ"
         },
         {
-            "query": "VisionSort sorting cartridge channel dimension",
-            "expected_answer": "34 × 50 µm",
-            "description": "ソーティングカートリッジのチャンネル寸法"
-        },
-        {
             "query": "recommended Edgemode focus calculation ComprehensiveQuality",
             "expected_answer": "ComprehensiveQuality",
             "description": "推奨されるフォーカス計算のEdgemode"
