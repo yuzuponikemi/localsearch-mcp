@@ -143,7 +143,9 @@ class BaseHybridIndexer:
             for rank, doc in enumerate(bm25_results):
                 url = doc['url']
                 rrf_scores[url] = rrf_scores.get(url, 0) + 1 / (RRF_K + rank + 1)
-                doc_data[url] = doc
+                # Keep the document with longer text (BM25 has full text)
+                if url not in doc_data or len(doc.get('text', '')) > len(doc_data[url].get('text', '')):
+                    doc_data[url] = doc
                 if url not in doc_sources:
                     doc_sources[url] = []
                 doc_sources[url].append("bm25")
@@ -153,7 +155,9 @@ class BaseHybridIndexer:
             for rank, doc in enumerate(vector_results):
                 url = doc['url']
                 rrf_scores[url] = rrf_scores.get(url, 0) + 1 / (RRF_K + rank + 1)
-                doc_data[url] = doc
+                # Keep the document with longer text (prefer BM25's full text over vector's truncated text)
+                if url not in doc_data or len(doc.get('text', '')) > len(doc_data[url].get('text', '')):
+                    doc_data[url] = doc
                 if url not in doc_sources:
                     doc_sources[url] = []
                 doc_sources[url].append("vector")
@@ -427,6 +431,27 @@ class LocalFileIndexer(BaseHybridIndexer):
             config = get_smart_config(
                 filename=doc.get('path', 'unknown.txt'),
                 text_content=doc['text']
+        # Upsert documents in batches (ChromaDB will update existing IDs)
+        # Use full text for vector indexing (with reasonable limit for embedding model)
+        # all-MiniLM-L6-v2 can handle ~256 tokens, approximately 1500-2000 chars
+        MAX_CHARS_FOR_EMBEDDING = 2000
+        batch_size = 100
+        ids = [doc['url'] for doc in self.documents]
+        docs = [
+            doc['text'][:MAX_CHARS_FOR_EMBEDDING] + ("..." if len(doc['text']) > MAX_CHARS_FOR_EMBEDDING else "")
+            for doc in self.documents
+        ]
+        metadatas = [{"title": doc['title'], "url": doc['url'], "path": doc.get('path', '')} for doc in self.documents]
+
+        for i in range(0, len(docs), batch_size):
+            batch_ids = ids[i:i+batch_size]
+            batch_docs = docs[i:i+batch_size]
+            batch_metadatas = metadatas[i:i+batch_size]
+
+            self.collection.upsert(
+                ids=batch_ids,
+                documents=batch_docs,
+                metadatas=batch_metadatas
             )
 
             # Apply chunking
