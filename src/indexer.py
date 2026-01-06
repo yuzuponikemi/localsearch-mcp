@@ -52,7 +52,7 @@ class BaseHybridIndexer:
         # Use lightweight embedding model (all-MiniLM-L6-v2)
         # Fast on CPU, good quality for semantic search
         self.emb_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
+            model_name="intfloat/multilingual-e5-large"
         )
 
         self.collection_name = collection_name

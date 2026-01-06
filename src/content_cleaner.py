@@ -4,9 +4,11 @@ Provides deduplication, boilerplate removal, and size filtering for chunks.
 """
 import hashlib
 import re
+import sys
 from typing import List, Set, Tuple
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from tqdm import tqdm
 from langchain_core.documents import Document
 
 
@@ -77,7 +79,7 @@ class ContentCleaner:
 
         cleaned_chunks = []
 
-        for chunk in chunks:
+        for chunk in tqdm(chunks, desc="Cleaning chunks", file=sys.stderr, unit="chunk"):
             content = chunk.page_content.strip()
 
             # Skip empty chunks
@@ -122,15 +124,28 @@ class ContentCleaner:
         """
         Check if content is a near duplicate of previously seen content.
         Uses SequenceMatcher for similarity comparison.
+        Optimized to use quick_ratio and cached second sequence (b).
         """
         # Only check against recent contents to avoid O(n²) complexity
         # Check last 100 items max
         check_limit = min(100, len(self.seen_contents))
         recent_contents = self.seen_contents[-check_limit:]
 
+        # Initialize matcher with content as the second sequence (b)
+        # This is more efficient as SequenceMatcher analyzes 'b' once
+        matcher = SequenceMatcher(None, b=content)
+
         for seen_content in recent_contents:
-            similarity = SequenceMatcher(None, content, seen_content).ratio()
-            if similarity >= self.NEAR_DUPLICATE_THRESHOLD:
+            matcher.set_seq1(seen_content)
+            
+            # Optimization: Check upper bounds first before expensive ratio()
+            if matcher.real_quick_ratio() < self.NEAR_DUPLICATE_THRESHOLD:
+                continue
+                
+            if matcher.quick_ratio() < self.NEAR_DUPLICATE_THRESHOLD:
+                continue
+                
+            if matcher.ratio() >= self.NEAR_DUPLICATE_THRESHOLD:
                 return True
 
         return False
