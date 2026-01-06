@@ -6,11 +6,9 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from src.server import mcp, wiki_indexer, local_indexer
-
 if __name__ == "__main__":
-    from .server import mcp, wiki_indexer, local_indexer
-    from .indexer import LocalFileIndexer
+    from src.server import mcp, wiki_indexer
+    from src.indexer import LocalFileIndexer
     import src.server as server_module
 
     # Check for build-vector-index command
@@ -20,9 +18,6 @@ if __name__ == "__main__":
         wiki_indexer.build_vector_index()  # Build vector index from loaded documents
         print("Done!", file=sys.stderr)
     else:
-        print("Starting Local Wikipedia Search MCP Server...", file=sys.stderr)
-        wiki_indexer.load_or_build()
-        print("Server ready!\n", file=sys.stderr)
         print("🚀 Starting Multi-Source Local Search MCP Server...", file=sys.stderr)
 
         # Load Wikipedia index
@@ -36,7 +31,6 @@ if __name__ == "__main__":
             try:
                 server_module.local_indexer = LocalFileIndexer(local_docs_path)
                 server_module.local_indexer.build_index()
-                print(f"   Indexed {len(server_module.local_indexer.documents)} documents", file=sys.stderr)
             except Exception as e:
                 print(f"⚠️  Warning: Failed to load local files: {e}", file=sys.stderr)
                 print("   Local file search will be disabled.", file=sys.stderr)

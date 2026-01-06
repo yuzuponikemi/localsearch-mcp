@@ -191,7 +191,8 @@ if __name__ == "__main__":
     if local_docs_path:
         print(f"\n📁 Loading local files from: {local_docs_path}", file=sys.stderr)
         try:
-            local_indexer = LocalFileIndexer(local_docs_path)
+            # Update the global local_indexer variable
+            globals()['local_indexer'] = LocalFileIndexer(local_docs_path)
             local_indexer.build_index()
         except Exception as e:
             print(f"⚠️  Warning: Failed to load local files: {e}", file=sys.stderr)

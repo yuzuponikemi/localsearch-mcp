@@ -431,27 +431,6 @@ class LocalFileIndexer(BaseHybridIndexer):
             config = get_smart_config(
                 filename=doc.get('path', 'unknown.txt'),
                 text_content=doc['text']
-        # Upsert documents in batches (ChromaDB will update existing IDs)
-        # Use full text for vector indexing (with reasonable limit for embedding model)
-        # all-MiniLM-L6-v2 can handle ~256 tokens, approximately 1500-2000 chars
-        MAX_CHARS_FOR_EMBEDDING = 2000
-        batch_size = 100
-        ids = [doc['url'] for doc in self.documents]
-        docs = [
-            doc['text'][:MAX_CHARS_FOR_EMBEDDING] + ("..." if len(doc['text']) > MAX_CHARS_FOR_EMBEDDING else "")
-            for doc in self.documents
-        ]
-        metadatas = [{"title": doc['title'], "url": doc['url'], "path": doc.get('path', '')} for doc in self.documents]
-
-        for i in range(0, len(docs), batch_size):
-            batch_ids = ids[i:i+batch_size]
-            batch_docs = docs[i:i+batch_size]
-            batch_metadatas = metadatas[i:i+batch_size]
-
-            self.collection.upsert(
-                ids=batch_ids,
-                documents=batch_docs,
-                metadatas=batch_metadatas
             )
 
             # Apply chunking
