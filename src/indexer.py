@@ -6,6 +6,8 @@ Handles downloading, tokenizing, and indexing data with BM25 + Vector search.
 import os
 import pickle
 import sys
+import json
+import hashlib
 from typing import List, Dict, Literal
 from collections import Counter
 from datasets import load_dataset
@@ -24,6 +26,7 @@ from src.logger import logger
 WIKI_INDEX_PATH = "data/wiki_index.pkl"
 WIKI_CHROMA_PATH = "data/chroma_db"
 LOCAL_CHROMA_PATH = "data/local_chroma_db"
+STATE_FILE_PATH = "data/indexing_state.json"
 
 # Number of documents to index for Wikipedia
 DEFAULT_SUBSET_SIZE = 1_000_000
@@ -343,17 +346,96 @@ class LocalFileIndexer(BaseHybridIndexer):
         self.extensions = extensions if extensions else [".md", ".txt", ".py"]
         # チャンキング戦略クラスを初期化
         self.chunker = ChunkingStrategy()
+        # Load indexing state for incremental updates
+        self.state = self._load_state()
+
+    def _load_state(self) -> Dict:
+        """Load indexing state from file."""
+        if os.path.exists(STATE_FILE_PATH):
+            try:
+                with open(STATE_FILE_PATH, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load state file: {e}")
+                return {}
+        return {}
+
+    def _save_state(self):
+        """Save indexing state to file."""
+        try:
+            os.makedirs(os.path.dirname(STATE_FILE_PATH), exist_ok=True)
+            with open(STATE_FILE_PATH, "w", encoding="utf-8") as f:
+                json.dump(self.state, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Failed to save state file: {e}")
+
+    def _calculate_file_hash(self, filepath: str) -> str:
+        """
+        Calculate MD5 hash of file content for strict change detection.
+
+        Args:
+            filepath: Path to the file
+
+        Returns:
+            MD5 hash as hexadecimal string
+        """
+        hash_md5 = hashlib.md5()
+        try:
+            with open(filepath, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_md5.update(chunk)
+            return hash_md5.hexdigest()
+        except Exception as e:
+            logger.warning(f"Failed to calculate hash for {filepath}: {e}")
+            return ""
+
+    def _remove_from_index(self, file_paths: List[str]):
+        """
+        Remove chunks associated with specified file paths from the index.
+
+        Args:
+            file_paths: List of file paths to remove
+        """
+        all_chunk_ids_to_delete = []
+
+        for path in file_paths:
+            if path in self.state:
+                chunk_ids = self.state[path].get('chunk_ids', [])
+                all_chunk_ids_to_delete.extend(chunk_ids)
+                logger.debug(f"Marking {len(chunk_ids)} chunks for deletion from {path}")
+                del self.state[path]
+
+        if all_chunk_ids_to_delete:
+            try:
+                # Get or create collection
+                try:
+                    collection = self.chroma_client.get_collection(
+                        name=self.collection_name,
+                        embedding_function=self.emb_fn
+                    )
+                except:
+                    # Collection doesn't exist yet, nothing to delete
+                    logger.debug(f"Collection {self.collection_name} doesn't exist, skipping deletion")
+                    return
+
+                # Delete chunks from ChromaDB
+                collection.delete(ids=all_chunk_ids_to_delete)
+                logger.info(f"Deleted {len(all_chunk_ids_to_delete)} chunks from {len(file_paths)} files")
+            except Exception as e:
+                logger.error(f"Error deleting chunks: {e}")
 
     def build_index(self):
         """
         Build/rebuild hybrid index from local files with Intelligent Preprocessing Pipeline.
+        Uses incremental indexing to only process changed files (based on mtime).
 
         Pipeline stages:
-        1. Document Analysis (quality scoring, language detection)
-        2. Smart Chunking (adaptive sizing, language-aware)
-        3. Content Cleaning (deduplication, boilerplate removal)
-        4. Quality Metrics (size distribution, uniqueness, diversity)
-        5. Vector Indexing with structured logging
+        1. Change Detection (new/updated/deleted/unchanged files)
+        2. Document Analysis (quality scoring, language detection)
+        3. Smart Chunking (adaptive sizing, language-aware)
+        4. Content Cleaning (deduplication, boilerplate removal)
+        5. Quality Metrics (size distribution, uniqueness, diversity)
+        6. Vector Indexing with structured logging
         """
         # Import here to avoid circular dependency
         from src.loaders import load_local_files
@@ -368,36 +450,96 @@ class LocalFileIndexer(BaseHybridIndexer):
 
         logger.info(f"Found {len(raw_documents)} local files", total_files=len(raw_documents))
 
+        # === Stage 0: Incremental Indexing - Change Detection ===
+        logger.info("Stage 0/5: Detecting file changes (incremental indexing)")
+
+        # Create a map of current files for quick lookup
+        current_files = {doc['path']: doc for doc in raw_documents}
+
+        # 1. Detect deleted files (in state but not in current files)
+        deleted_paths = [p for p in self.state.keys() if p not in current_files]
+        if deleted_paths:
+            logger.info(f"Removing {len(deleted_paths)} deleted files from index")
+            self._remove_from_index(deleted_paths)
+
+        # 2. Detect new/updated files vs unchanged files
+        to_process_docs = []
+        skipped_count = 0
+
+        for doc in raw_documents:
+            path = doc['path']
+            current_mtime = os.path.getmtime(path)
+
+            # Check if file is unchanged (same mtime)
+            if path in self.state:
+                stored_mtime = self.state[path].get('mtime')
+                if stored_mtime == current_mtime:
+                    # File unchanged, skip processing
+                    skipped_count += 1
+                    continue
+                else:
+                    # File updated, remove old chunks before re-indexing
+                    logger.debug(f"File updated: {path} (mtime changed)")
+                    self._remove_from_index([path])
+
+            # New or updated file
+            to_process_docs.append(doc)
+
+        logger.info(
+            f"Change detection complete",
+            total_files=len(raw_documents),
+            unchanged=skipped_count,
+            new_or_updated=len(to_process_docs),
+            deleted=len(deleted_paths)
+        )
+
+        # Early exit if no changes detected
+        if not to_process_docs and not deleted_paths:
+            logger.info("No changes detected. Index is up to date.")
+            # Load BM25 index if it exists
+            if self.documents:
+                tokenized_corpus = [doc['text'].lower().split() for doc in self.documents]
+                self.bm25 = BM25Okapi(tokenized_corpus)
+            return
+
+        logger.info(f"Processing {len(to_process_docs)} changed files")
+
+        # Use only the files that need processing
+        raw_documents = to_process_docs
+
         # Initialize pipeline components
         analyzer = DocumentAnalyzer()
         cleaner = ContentCleaner()
         quality_analyzer = QualityAnalyzer()
 
-        # 1. BM25用: ファイル単位でインデックス（従来通り）
-        self.documents = raw_documents
-        tokenized_corpus = [doc['text'].lower().split() for doc in self.documents]
-        self.bm25 = BM25Okapi(tokenized_corpus)
+        # Note: BM25 will be rebuilt with ALL documents at the end (fast operation)
+        # For now, only process the changed documents for vector indexing
 
         # 2. Document Analysis & Smart Chunking
-        logger.info("Stage 1/4: Analyzing documents and applying smart chunking")
+        logger.info("Stage 1/5: Analyzing documents and applying smart chunking")
 
-        # ChromaDBコレクションの再作成
+        # Get or create ChromaDB collection (don't delete existing data)
         try:
-            self.chroma_client.delete_collection(name=self.collection_name)
+            self.collection = self.chroma_client.get_collection(
+                name=self.collection_name,
+                embedding_function=self.emb_fn
+            )
+            logger.debug(f"Using existing collection: {self.collection_name}")
         except:
-            pass
-
-        self.collection = self.chroma_client.create_collection(
-            name=self.collection_name,
-            embedding_function=self.emb_fn
-        )
+            self.collection = self.chroma_client.create_collection(
+                name=self.collection_name,
+                embedding_function=self.emb_fn
+            )
+            logger.debug(f"Created new collection: {self.collection_name}")
 
         all_chunks = []
         doc_analyses = []
         language_counts = Counter()
+        # Track chunk IDs per file for state management
+        file_chunk_mapping = {}  # {file_path: [chunk_ids]}
 
         # Process each document with progress tracking
-        for idx, doc in enumerate(tqdm(self.documents, desc="Analyzing & Chunking", file=sys.stderr)):
+        for idx, doc in enumerate(tqdm(raw_documents, desc="Analyzing & Chunking", file=sys.stderr)):
             # Analyze document
             analysis = analyzer.analyze(doc['text'], doc.get('path', ''))
             doc_analyses.append(analysis)
@@ -408,7 +550,7 @@ class LocalFileIndexer(BaseHybridIndexer):
                 logger.log_progress(
                     stage="document_analysis",
                     current=idx + 1,
-                    total=len(self.documents),
+                    total=len(raw_documents),
                     metrics={
                         "avg_quality": f"{sum(a.quality_score for a in doc_analyses) / len(doc_analyses):.3f}",
                         "languages_detected": len(language_counts)
@@ -436,23 +578,31 @@ class LocalFileIndexer(BaseHybridIndexer):
             # Apply chunking
             chunks = self.chunker.chunk_documents([lc_doc], config)
 
-            # Add chunk index to metadata
+            # Add chunk index to metadata and track chunk IDs for this file
+            file_path = doc.get('path', '')
+            file_chunk_ids = []
+
             for i, chunk in enumerate(chunks):
                 chunk.metadata['chunk_index'] = i
                 chunk.metadata['chunking_method'] = config.method.value
                 chunk.metadata['detected_language'] = config.detected_language
                 chunk.metadata['language_multiplier'] = str(config.language_multiplier)
 
+                # Generate chunk ID (will be used later)
+                chunk_id = f"{chunk.metadata.get('url', 'unknown')}#chunk{i}"
+                file_chunk_ids.append(chunk_id)
+
             all_chunks.extend(chunks)
+            file_chunk_mapping[file_path] = file_chunk_ids
 
         logger.info(
             f"Chunking complete",
             total_chunks_before_cleaning=len(all_chunks),
-            avg_chunks_per_doc=f"{len(all_chunks)/len(self.documents):.1f}"
+            avg_chunks_per_doc=f"{len(all_chunks)/len(raw_documents):.1f}" if raw_documents else "0"
         )
 
         # 3. Content Cleaning
-        logger.info("Stage 2/4: Cleaning content (deduplication, boilerplate removal)")
+        logger.info("Stage 2/5: Cleaning content (deduplication, boilerplate removal)")
 
         cleaned_chunks, cleaning_stats = cleaner.clean_chunks(all_chunks, detect_boilerplate=True)
 
@@ -467,14 +617,14 @@ class LocalFileIndexer(BaseHybridIndexer):
         )
 
         # 4. Quality Metrics
-        logger.info("Stage 3/4: Computing quality metrics")
+        logger.info("Stage 3/5: Computing quality metrics")
 
         metrics = quality_analyzer.analyze(cleaned_chunks)
 
         logger.info("Quality metrics computed", **metrics.to_dict())
 
         # 5. Vector Indexing with Progress
-        logger.info("Stage 4/4: Indexing chunks to vector database")
+        logger.info("Stage 4/5: Indexing chunks to vector database")
 
         chunk_ids = []
         chunk_texts = []
@@ -518,11 +668,35 @@ class LocalFileIndexer(BaseHybridIndexer):
                         metrics={"batch_size": batch_size}
                     )
 
+        # Update state for processed files
+        logger.info("Updating indexing state for processed files")
+        for file_path, chunk_id_list in file_chunk_mapping.items():
+            if file_path:
+                self.state[file_path] = {
+                    "mtime": os.path.getmtime(file_path),
+                    "chunk_ids": chunk_id_list
+                }
+
+        # Save state to disk
+        self._save_state()
+        logger.info("Indexing state saved")
+
+        # 6. Rebuild BM25 index with ALL documents (fast operation)
+        logger.info("Stage 5/5: Rebuilding BM25 index with all documents")
+
+        # Reload all documents for BM25 (text-based, very fast)
+        all_docs = load_local_files(self.directory_path, self.extensions)
+        self.documents = all_docs
+        tokenized_corpus = [doc['text'].lower().split() for doc in self.documents]
+        self.bm25 = BM25Okapi(tokenized_corpus)
+
+        logger.info(f"BM25 index rebuilt with {len(self.documents)} total documents")
+
         # Final summary
         avg_quality = sum(a.quality_score for a in doc_analyses) / len(doc_analyses) if doc_analyses else 0.0
 
         logger.log_document_stats(
-            total_docs=len(self.documents),
+            total_docs=len(all_docs),
             total_chunks=len(chunk_texts),
             avg_quality=avg_quality,
             unique_ratio=cleaning_stats.uniqueness_ratio,
@@ -530,8 +704,9 @@ class LocalFileIndexer(BaseHybridIndexer):
         )
 
         logger.info(
-            "Local file index build complete",
-            files=len(self.documents),
-            chunks=len(chunk_texts),
+            "Local file index build complete (incremental)",
+            total_files=len(all_docs),
+            processed_files=len(raw_documents),
+            total_chunks=len(chunk_texts),
             avg_quality_score=f"{avg_quality:.3f}"
         )
