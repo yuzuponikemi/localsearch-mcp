@@ -15,7 +15,7 @@ import ollama
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Local documents path for VisionSort/Casper KB
-LOCAL_DOCS_PATH = "/Users/ikmx/source/tc/Casper_KB-main/docs/consolidated"
+LOCAL_DOCS_PATH = "test"
 
 
 async def run_ollama_agent():
