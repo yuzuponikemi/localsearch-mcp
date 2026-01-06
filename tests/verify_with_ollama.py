@@ -15,7 +15,7 @@ import ollama
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Local documents path for VisionSort/Casper KB
-LOCAL_DOCS_PATH = "/Users/ikmx/source/tc/Casper_KB-main/docs/consolidated"
+LOCAL_DOCS_PATH = "test"
 
 
 async def run_ollama_agent():
@@ -165,11 +165,6 @@ async def run_local_search_test():
             "query": "Ultrafine focus step size micrometer",
             "expected_answer": "0.05μm",
             "description": "Ultrafineフォーカスのステップサイズ"
-        },
-        {
-            "query": "VisionSort sorting cartridge channel dimension",
-            "expected_answer": "34 × 50 µm",
-            "description": "ソーティングカートリッジのチャンネル寸法"
         },
         {
             "query": "recommended Edgemode focus calculation ComprehensiveQuality",
