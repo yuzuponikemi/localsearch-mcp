@@ -1,8 +1,18 @@
 """
 Ollama Integration Test for Local Search MCP Server
 
+⚠️  LOCAL TESTING ONLY - NOT FOR CI/CD ⚠️
+
 This script acts as an MCP client that uses Ollama for LLM inference.
 It demonstrates the complete workflow: query -> tool use -> final answer.
+
+Requirements:
+- Ollama must be installed and running locally
+- Required models: llama3.2, command-r (or compatible models)
+- External test documents (not included in repository)
+
+This test is intended for local development and validation only.
+For CI/CD testing, use test_indexing_search.py instead.
 """
 import asyncio
 import os
@@ -14,8 +24,10 @@ import ollama
 # MCP Server module path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Local documents path for VisionSort/Casper KB
-LOCAL_DOCS_PATH = "test"
+# Local documents path for testing
+# For CI/CD: Use test_docs/ (repository test documents)
+# For local testing: Use your own documents or external test data
+LOCAL_DOCS_PATH = os.getenv("LOCAL_DOCS_PATH", "test_docs")
 
 
 async def run_ollama_agent():
