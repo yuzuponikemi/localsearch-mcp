@@ -20,9 +20,13 @@ if __name__ == "__main__":
     else:
         print("🚀 Starting Multi-Source Local Search MCP Server...", file=sys.stderr)
 
-        # Load Wikipedia index
-        print("\n📚 Loading Wikipedia index...", file=sys.stderr)
-        wiki_indexer.load_or_build()
+        # Load Wikipedia index (skip if SKIP_WIKIPEDIA is set for testing)
+        skip_wikipedia = os.environ.get("SKIP_WIKIPEDIA", "false").lower() == "true"
+        if not skip_wikipedia:
+            print("\n📚 Loading Wikipedia index...", file=sys.stderr)
+            wiki_indexer.load_or_build()
+        else:
+            print("\n⏭️  Skipping Wikipedia index (SKIP_WIKIPEDIA=true)", file=sys.stderr)
 
         # Initialize local file indexer if configured
         local_docs_path = os.environ.get("LOCAL_DOCS_PATH")

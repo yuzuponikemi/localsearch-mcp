@@ -496,7 +496,11 @@ class LocalFileIndexer(BaseHybridIndexer):
         # Early exit if no changes detected
         if not to_process_docs and not deleted_paths:
             logger.info("No changes detected. Index is up to date.")
-            # Load BM25 index if it exists
+            # Load or reload documents for BM25 index
+            if not self.documents:
+                # First time initialization - load all documents
+                self.documents = load_local_files(self.directory_path, self.extensions)
+                logger.info(f"Initial load: {len(self.documents)} documents")
             if self.documents:
                 tokenized_corpus = [doc['text'].lower().split() for doc in self.documents]
                 self.bm25 = BM25Okapi(tokenized_corpus)

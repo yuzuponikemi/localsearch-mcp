@@ -1,0 +1,40 @@
+Database Management Systems
+
+A Database Management System (DBMS) is software that handles the storage, retrieval, and updating of data in a computer system. Modern applications rely heavily on databases to manage their data efficiently.
+
+Types of Databases:
+
+1. Relational Databases (SQL)
+   - MySQL
+   - PostgreSQL
+   - Oracle Database
+   - Microsoft SQL Server
+
+   Relational databases organize data into tables with rows and columns. They use SQL (Structured Query Language) for data manipulation and support ACID properties (Atomicity, Consistency, Isolation, Durability).
+
+2. NoSQL Databases
+   - MongoDB (Document store)
+   - Redis (Key-value store)
+   - Cassandra (Wide-column store)
+   - Neo4j (Graph database)
+
+   NoSQL databases are designed for specific data models and offer flexible schemas, horizontal scaling, and high performance for certain use cases.
+
+Key Concepts:
+
+- Schema: The structure or organization of data
+- Index: Data structure that improves query speed
+- Transaction: A unit of work that must be completed entirely or not at all
+- Normalization: Organizing data to reduce redundancy
+- Query Optimization: Improving the performance of database queries
+
+Database Design Best Practices:
+
+1. Choose the right database type for your use case
+2. Design a proper schema with appropriate relationships
+3. Use indexes strategically to improve query performance
+4. Implement proper backup and recovery procedures
+5. Monitor and optimize query performance regularly
+6. Ensure data security and access control
+
+Databases are fundamental to modern software applications, from simple mobile apps to complex enterprise systems.

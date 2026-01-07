@@ -225,12 +225,22 @@ localsearch-mcp/
 │   ├── server.py           # MCP server implementation
 │   ├── indexer.py          # Multi-source hybrid indexing
 │   └── loaders.py          # Local file loaders
-├── test_notes/             # Sample test files
+├── test_docs/              # Test documents for CI/CD
+│   ├── document1.md        # Sample documents
+│   ├── document2.md
+│   └── ...
+├── test_notes/             # Additional sample test files
 │   ├── secret_project.md
 │   └── meeting_notes.md
-└── tests/
-    ├── __init__.py
-    └── verify_with_ollama.py  # Ollama integration test client
+├── tests/
+│   ├── __init__.py
+│   ├── README.md           # Test documentation
+│   ├── test_indexing_search.py   # CI/CD test suite (no LLM)
+│   └── verify_with_ollama.py     # LLM integration tests (local only)
+└── .github/
+    └── workflows/
+        ├── test.yml        # CI/CD test workflow
+        └── lint.yml        # Code quality checks
 ```
 
 ## Available Tools
@@ -326,32 +336,71 @@ ds = load_dataset("wikimedia/wikipedia", "20231101.en", split="train[:1000]")
 ## Development
 
 ### Running Tests
+
+This project has two types of tests:
+
+#### 1. CI/CD Tests (Automated)
+
+These tests run automatically in GitHub Actions and require no LLM:
+
 ```bash
-# Simple MCP connection test (Wikipedia search)
-uv run tests/verify_with_ollama.py --simple
+# Run the full CI/CD test suite (with local files only, fast)
+SKIP_WIKIPEDIA=true uv run python tests/test_indexing_search.py
 
-# Local document search test (VisionSort/Casper KB)
-uv run tests/verify_with_ollama.py --local
-
-# Full Ollama agent test
-uv run tests/verify_with_ollama.py
+# Run with Wikipedia indexing (requires ~500MB disk space and internet)
+uv run python tests/test_indexing_search.py
 ```
+
+**What's tested:**
+- MCP server connection
+- Local document indexing
+- Search results quality
+- Incremental indexing (mtime-based change detection)
+- Search strategies (keyword vs hybrid)
+
+These tests use the `test_docs/` directory containing sample documents in the repository.
+
+#### 2. LLM Integration Tests (Local Only)
+
+These tests require Ollama and are for local development only:
+
+```bash
+# Simple MCP connection test (Wikipedia search, no LLM)
+uv run python tests/verify_with_ollama.py --simple
+
+# Local document search test (no LLM)
+uv run python tests/verify_with_ollama.py --local
+
+# Q&A test with Ollama (requires llama3.2)
+uv run python tests/verify_with_ollama.py --local-qa
+
+# Full agent test with function calling (requires llama3.2 and command-r)
+uv run python tests/verify_with_ollama.py
+```
+
+**Requirements:**
+- Ollama installed and running
+- Models: `llama3.2`, `command-r` (install with `ollama pull <model>`)
 
 ### Test Options
 
-| Option | Description |
-|--------|-------------|
-| `--simple` | Tests MCP connection with Wikipedia search (no LLM required) |
-| `--local` | Tests local document search with domain-specific queries |
-| (none) | Full agent test with Ollama LLM |
+| Test File | Type | LLM Required | Purpose |
+|-----------|------|--------------|---------|
+| `test_indexing_search.py` | CI/CD | No | Automated testing of core functionality |
+| `verify_with_ollama.py --simple` | Manual | No | Basic connection test |
+| `verify_with_ollama.py --local` | Manual | No | Local search validation |
+| `verify_with_ollama.py --local-qa` | Manual | Yes | Q&A with local docs |
+| `verify_with_ollama.py` | Manual | Yes | Full agent workflow |
+
+See `tests/README.md` for detailed test documentation.
 
 ### Customizing Local Document Path
 
-Edit `tests/verify_with_ollama.py` to change the default local documents path:
+Set the `LOCAL_DOCS_PATH` environment variable to use your own documents:
 
-```python
-# Local documents path for VisionSort/Casper KB
-LOCAL_DOCS_PATH = "/path/to/your/documents"
+```bash
+export LOCAL_DOCS_PATH="/path/to/your/documents"
+uv run python tests/test_indexing_search.py
 ```
 
 ### Rebuilding Index
@@ -630,6 +679,79 @@ ds = load_dataset("wikipedia", "20231101.en", split="train")
 ```
 
 注: 約20GB のディスクスペースと長い構築時間が必要です。
+
+## 開発
+
+### テストの実行
+
+このプロジェクトには2種類のテストがあります：
+
+#### 1. CI/CD テスト（自動化）
+
+GitHub Actions で自動的に実行され、LLM は不要です：
+
+```bash
+# CI/CD テストスイートの実行（ローカルファイルのみ、高速）
+SKIP_WIKIPEDIA=true uv run python tests/test_indexing_search.py
+
+# Wikipedia インデックスありで実行（約500MBのディスク容量とインターネット接続が必要）
+uv run python tests/test_indexing_search.py
+```
+
+**テスト内容:**
+- MCP サーバー接続
+- ローカルドキュメントのインデックス化
+- 検索結果の品質
+- 増分インデックス（mtime ベースの変更検出）
+- 検索戦略（キーワード vs ハイブリッド）
+
+これらのテストはリポジトリ内の `test_docs/` ディレクトリのサンプルドキュメントを使用します。
+
+#### 2. LLM 統合テスト（ローカルのみ）
+
+Ollama が必要で、ローカル開発専用です：
+
+```bash
+# シンプルな MCP 接続テスト（Wikipedia 検索、LLM なし）
+uv run python tests/verify_with_ollama.py --simple
+
+# ローカルドキュメント検索テスト（LLM なし）
+uv run python tests/verify_with_ollama.py --local
+
+# Ollama を使った Q&A テスト（llama3.2 が必要）
+uv run python tests/verify_with_ollama.py --local-qa
+
+# 関数呼び出しを使った完全なエージェントテスト（llama3.2 と command-r が必要）
+uv run python tests/verify_with_ollama.py
+```
+
+**必要条件:**
+- Ollama のインストールと起動
+- モデル: `llama3.2`、`command-r` (`ollama pull <model>` でインストール)
+
+### テストオプション
+
+| テストファイル | タイプ | LLM 必要 | 目的 |
+|--------------|------|----------|------|
+| `test_indexing_search.py` | CI/CD | 不要 | コア機能の自動テスト |
+| `verify_with_ollama.py --simple` | 手動 | 不要 | 基本接続テスト |
+| `verify_with_ollama.py --local` | 手動 | 不要 | ローカル検索の検証 |
+| `verify_with_ollama.py --local-qa` | 手動 | 必要 | ローカルドキュメントでの Q&A |
+| `verify_with_ollama.py` | 手動 | 必要 | 完全なエージェントワークフロー |
+
+詳細なテストドキュメントは `tests/README.md` を参照してください。
+
+### ローカルドキュメントパスのカスタマイズ
+
+`LOCAL_DOCS_PATH` 環境変数を設定して、独自のドキュメントを使用できます：
+
+```bash
+export LOCAL_DOCS_PATH="/path/to/your/documents"
+uv run python tests/test_indexing_search.py
+```
+
+### インデックスの再構築
+`data/wiki_index.pkl` を削除してサーバーを再起動します。
 
 ## トラブルシューティング
 

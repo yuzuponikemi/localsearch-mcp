@@ -1,8 +1,19 @@
 """
 Ollama Integration Test for Local Search MCP Server
 
+⚠️  LOCAL TESTING ONLY - NOT FOR CI/CD ⚠️
+
 This script acts as an MCP client that uses Ollama for LLM inference.
 It demonstrates the complete workflow: query -> tool use -> final answer.
+
+Requirements:
+- Ollama must be installed and running locally
+- Required models: llama3.2, command-r (or compatible models)
+- Test documents: Uses test_docs/ directory by default (Python, ML, Database, Web Dev content)
+  - Can be overridden with LOCAL_DOCS_PATH environment variable
+
+This test is intended for local development and validation only.
+For CI/CD testing, use test_indexing_search.py instead.
 """
 import asyncio
 import os
@@ -14,8 +25,11 @@ import ollama
 # MCP Server module path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Local documents path for VisionSort/Casper KB
-LOCAL_DOCS_PATH = "test"
+# Local documents path for testing
+# Default: Use test_docs/ (repository test documents with Python, ML, Database, Web Dev content)
+# Override with LOCAL_DOCS_PATH environment variable if needed
+TEST_DOCS_DIR = os.path.join(PROJECT_ROOT, "test_docs")
+LOCAL_DOCS_PATH = os.getenv("LOCAL_DOCS_PATH", TEST_DOCS_DIR)
 
 
 async def run_ollama_agent():
@@ -57,8 +71,8 @@ async def run_ollama_agent():
                     }
                 })
 
-            # User query
-            query = "VisionSort 405nm laser output power mW"
+            # User query (using test_docs content)
+            query = "What are the popular Python web frameworks?"
             print(f"\n👤 User Query: {query}")
 
             messages = [{'role': 'user', 'content': query}]
@@ -138,7 +152,7 @@ async def run_simple_test():
 
 
 async def run_local_search_test():
-    """Test local document search with VisionSort/Casper KB documents."""
+    """Test local document search with test_docs documents."""
     server_params = StdioServerParameters(
         command="uv",
         args=["run", "python", "-m", "src"],
@@ -146,30 +160,30 @@ async def run_local_search_test():
         cwd=PROJECT_ROOT
     )
 
-    print("🧪 Running Local Document Search Test (VisionSort/Casper KB)...")
+    print("🧪 Running Local Document Search Test (test_docs)...")
     print(f"📁 Local docs path: {LOCAL_DOCS_PATH}\n")
 
-    # Test queries that can ONLY be answered from local documents
+    # Test queries that can be answered from test_docs
     test_queries = [
         {
-            "query": "VisionSort 405nm laser output power mW",
-            "expected_answer": "365 mW",
-            "description": "VisionSort 405nmレーザーの出力"
+            "query": "Python web frameworks Django Flask",
+            "expected_keywords": ["Django", "Flask"],
+            "description": "Python web frameworks"
         },
         {
-            "query": "FluidicSystem error code 4015 CL Leak",
-            "expected_answer": "Emergency level, chip holder leak",
-            "description": "エラーコード4015の意味と対処法"
+            "query": "machine learning algorithms supervised unsupervised",
+            "expected_keywords": ["supervised", "unsupervised", "classification", "regression"],
+            "description": "Machine learning types"
         },
         {
-            "query": "Ultrafine focus step size micrometer",
-            "expected_answer": "0.05μm",
-            "description": "Ultrafineフォーカスのステップサイズ"
+            "query": "database management system DBMS SQL",
+            "expected_keywords": ["database", "DBMS", "SQL"],
+            "description": "Database management systems"
         },
         {
-            "query": "recommended Edgemode focus calculation ComprehensiveQuality",
-            "expected_answer": "ComprehensiveQuality",
-            "description": "推奨されるフォーカス計算のEdgemode"
+            "query": "web development frontend backend HTML CSS JavaScript",
+            "expected_keywords": ["frontend", "backend", "HTML", "CSS", "JavaScript"],
+            "description": "Web development technologies"
         },
     ]
 
@@ -189,10 +203,11 @@ async def run_local_search_test():
             print("📚 Testing Local Document Search Queries")
             print("="*60)
 
+            passed = 0
             for i, test in enumerate(test_queries, 1):
                 print(f"\n--- Test {i}: {test['description']} ---")
                 print(f"🔍 Query: {test['query']}")
-                print(f"📋 Expected: {test['expected_answer']}")
+                print(f"📋 Expected keywords: {', '.join(test['expected_keywords'])}")
 
                 result = await session.call_tool(
                     "search_local",
@@ -203,30 +218,38 @@ async def run_local_search_test():
                 print(f"\n📄 Search Result (first 500 chars):")
                 print(result_text[:500] if len(result_text) > 500 else result_text)
 
-                # Check if expected answer is in results
-                if test["expected_answer"].lower() in result_text.lower():
-                    print(f"\n✅ PASS: Expected answer found in results!")
+                # Check if at least one expected keyword is in results
+                found_keywords = [kw for kw in test["expected_keywords"] if kw.lower() in result_text.lower()]
+                if found_keywords:
+                    print(f"\n✅ PASS: Found keywords: {', '.join(found_keywords)}")
+                    passed += 1
                 else:
-                    print(f"\n⚠️  CHECK: Expected answer may not be directly visible")
+                    print(f"\n⚠️  FAIL: No expected keywords found")
 
                 print("-"*40)
+
+            print(f"\n📊 Results: {passed}/{len(test_queries)} queries passed")
 
             print("\n" + "="*60)
             print("🔍 Testing Multi-Source Search (Wikipedia + Local)")
             print("="*60)
 
-            # Test combined search
+            # Test combined search (should return both Wikipedia and local results)
             result = await session.call_tool(
                 "search",
-                arguments={"query": "cell sorting flow cytometry", "top_k": 3, "source": "all"}
+                arguments={"query": "Python programming language web frameworks", "top_k": 3, "source": "all"}
             )
-            print(f"\n📄 Combined Search Result:\n{result.content[0].text[:1000]}...")
+            result_text = result.content[0].text
+            print(f"\n📄 Combined Search Result (first 1000 chars):")
+            print(result_text[:1000] if len(result_text) > 1000 else result_text)
+            print("\n(Should contain both Wikipedia results and local test_docs results)")
 
 
 async def run_local_qa_test():
     """
     Test local file Q&A with Ollama.
-    Uses local document search and Ollama to generate answers based on local files only.
+    Uses local document search (test_docs) and Ollama to generate answers based on local files only.
+    Tests the complete RAG (Retrieval-Augmented Generation) workflow.
     """
     server_params = StdioServerParameters(
         command="uv",
@@ -235,8 +258,9 @@ async def run_local_qa_test():
         cwd=PROJECT_ROOT
     )
 
-    print("🧪 Running Local File Q&A Test with Ollama...")
-    print(f"📁 Local docs path: {LOCAL_DOCS_PATH}\n")
+    print("🧪 Running Local File Q&A Test with Ollama (RAG Demo)...")
+    print(f"📁 Local docs path: {LOCAL_DOCS_PATH}")
+    print("📚 Test documents contain info about Python, ML, Databases, and Web Dev\n")
 
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -249,19 +273,19 @@ async def run_local_qa_test():
                 print("\n⚠️  Warning: search_local tool not available!")
                 return
 
-            # Test questions in English with optimized search queries
+            # Test questions based on test_docs content
             test_cases = [
                 {
-                    "question": "What is the output power in mW of the 405nm laser used in VisionSort?",
-                    "search_query": "405nm laser output power mW VisionSort"
+                    "question": "What are the popular Python web frameworks mentioned in the documents?",
+                    "search_query": "Python web frameworks Django Flask"
                 },
                 {
-                    "question": "What does FluidicSystem error code 4015 mean and how to fix it?",
-                    "search_query": "FluidicSystem error code 4015"
+                    "question": "What are the main types of machine learning?",
+                    "search_query": "machine learning types supervised unsupervised reinforcement"
                 },
                 {
-                    "question": "What are the channel dimensions of the VisionSort sorting cartridge?",
-                    "search_query": "VisionSort sorting cartridge channel dimensions"
+                    "question": "What technologies are used in web development?",
+                    "search_query": "web development frontend backend technologies"
                 }
             ]
 
@@ -290,11 +314,13 @@ async def run_local_qa_test():
 
             print(f"   Found {len(search_results_full)} chars, using {len(search_results)} chars")
 
-            # Debug: Check if answer is in results
-            if "365" in search_results:
-                print("   ✓ Search results contain '365'\n")
+            # Debug: Check if expected keywords are in results
+            expected_keywords = ["Django", "Flask", "Python"]
+            found = [kw for kw in expected_keywords if kw in search_results]
+            if found:
+                print(f"   ✓ Search results contain: {', '.join(found)}\n")
             else:
-                print("   ✗ Search results do NOT contain '365'\n")
+                print("   ✗ Search results may not contain expected keywords\n")
 
             # Step 2: Use Ollama to generate answer based on search results
             print("🤖 Step 2: Generating answer with Ollama...")
@@ -349,19 +375,22 @@ if __name__ == "__main__":
         elif sys.argv[1] == "--local-qa":
             # Run local file Q&A with Ollama
             print("\nℹ️  This requires Ollama to be running with llama3.2 model")
-            print("   Install with: ollama pull llama3.2\n")
+            print("   Install with: ollama pull llama3.2")
+            print(f"   Using test documents from: {LOCAL_DOCS_PATH}\n")
             asyncio.run(run_local_qa_test())
         else:
             print(f"\n❌ Unknown option: {sys.argv[1]}")
             print("   Available options:")
             print("   --simple    : Test MCP connection with Wikipedia search")
-            print("   --local     : Test local document search (VisionSort/Casper KB)")
+            print("   --local     : Test local document search (test_docs)")
             print("   --local-qa  : Test local file Q&A with Ollama (uses llama3.2)")
             print("   (no args)   : Full Ollama agent test with function calling")
     else:
         # Run full Ollama agent test
         print("\nℹ️  This requires Ollama to be running with llama3.2 model")
+        print("   Install with: ollama pull llama3.2 command-r")
         print("   Use --simple flag to test MCP connection only")
         print("   Use --local flag to test local document search")
-        print("   Use --local-qa flag to test Q&A with local files\n")
+        print("   Use --local-qa flag to test Q&A with local files")
+        print(f"   Using test documents from: {LOCAL_DOCS_PATH}\n")
         asyncio.run(run_ollama_agent())
