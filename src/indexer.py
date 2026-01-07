@@ -473,7 +473,6 @@ class LocalFileIndexer(BaseHybridIndexer):
             # Check if file is unchanged (same mtime)
             if path in self.state:
                 stored_mtime = self.state[path].get('mtime')
-                print(f"[DEBUG mtime] File: {os.path.basename(path)}, stored={stored_mtime}, current={current_mtime}, equal={stored_mtime == current_mtime}", file=sys.stderr)
                 if stored_mtime == current_mtime:
                     # File unchanged, skip processing
                     skipped_count += 1
@@ -481,7 +480,6 @@ class LocalFileIndexer(BaseHybridIndexer):
                 else:
                     # File updated, remove old chunks before re-indexing
                     logger.debug(f"File updated: {path} (mtime changed)")
-                    print(f"[DEBUG mtime] Removing old chunks for updated file: {os.path.basename(path)}", file=sys.stderr)
                     self._remove_from_index([path])
 
             # New or updated file
@@ -503,9 +501,6 @@ class LocalFileIndexer(BaseHybridIndexer):
                 # First time initialization - load all documents
                 self.documents = load_local_files(self.directory_path, self.extensions)
                 logger.info(f"Initial load: {len(self.documents)} documents")
-                print(f"[DEBUG early_return] Loaded {len(self.documents)} documents", file=sys.stderr)
-                for doc in self.documents:
-                    print(f"[DEBUG early_return] Document: {doc['title']}, first 60 chars: {doc['text'][:60]}", file=sys.stderr)
             if self.documents:
                 tokenized_corpus = [doc['text'].lower().split() for doc in self.documents]
                 self.bm25 = BM25Okapi(tokenized_corpus)
@@ -695,11 +690,7 @@ class LocalFileIndexer(BaseHybridIndexer):
 
         # Reload all documents for BM25 (text-based, very fast)
         all_docs = load_local_files(self.directory_path, self.extensions)
-        print(f"[DEBUG build_index] load_local_files returned {len(all_docs)} documents", file=sys.stderr)
-        for doc in all_docs:
-            print(f"[DEBUG build_index] Document: {doc['title']}, first 60 chars: {doc['text'][:60]}", file=sys.stderr)
         self.documents = all_docs
-        print(f"[DEBUG build_index] self.documents now has {len(self.documents)} documents", file=sys.stderr)
         tokenized_corpus = [doc['text'].lower().split() for doc in self.documents]
         self.bm25 = BM25Okapi(tokenized_corpus)
 

@@ -60,10 +60,6 @@ def load_local_files(directory_path: str, extensions: List[str] = None) -> List[
                 # Calculate relative path for cleaner IDs
                 rel_path = os.path.relpath(file_path, directory_path)
 
-                # Debug output for incremental indexing tests
-                if "test_doc" in file_path or "new_doc" in file_path:
-                    print(f"[DEBUG load_local_files] {os.path.basename(file_path)}: first 100 chars = {content[:100]}", file=sys.stderr)
-
                 # Create document entry
                 documents.append({
                     "id": f"file://{rel_path}",

@@ -19,33 +19,30 @@ mcp = FastMCP("MultiSourceLocalSearch")
 # Global indexer instances
 wiki_indexer = WikiIndexer()
 local_indexer = None  # Will be initialized on first use if LOCAL_DOCS_PATH is set
-_local_indexer_initialized = False
+_local_docs_path_cached = None
 
 
 def _ensure_local_indexer():
     """Initialize local indexer on first use (lazy initialization)."""
-    global local_indexer, _local_indexer_initialized
-
-    if _local_indexer_initialized:
-        return
-
-    _local_indexer_initialized = True
+    global local_indexer, _local_docs_path_cached
 
     local_docs_path = os.environ.get("LOCAL_DOCS_PATH")
-    print(f"[DEBUG _ensure_local_indexer] LOCAL_DOCS_PATH={local_docs_path}", file=os.sys.stderr)
+
+    # Check if we need to create a new indexer (path changed or first time)
+    if local_indexer is not None and _local_docs_path_cached == local_docs_path:
+        return  # Already initialized with the same path
+
+    _local_docs_path_cached = local_docs_path
+
     if local_docs_path:
         print(f"📁 Loading local files from: {local_docs_path}", file=os.sys.stderr)
         try:
             local_indexer = LocalFileIndexer(local_docs_path)
             local_indexer.build_index()
-            print(f"[DEBUG] local_indexer initialized: {local_indexer is not None}, docs: {len(local_indexer.documents) if local_indexer else 0}", file=os.sys.stderr)
         except Exception as e:
             print(f"⚠️  Warning: Failed to load local files: {e}", file=os.sys.stderr)
             print("   Local file search will be disabled.", file=os.sys.stderr)
-            import traceback
-            traceback.print_exc(file=os.sys.stderr)
-    else:
-        print("[DEBUG] LOCAL_DOCS_PATH not set!", file=os.sys.stderr)
+            local_indexer = None
 
 
 def _ensure_wiki_indexer():
@@ -141,15 +138,12 @@ def search(
     if source in ["all", "local"]:
         _ensure_local_indexer()
 
-        print(f"[DEBUG search] After _ensure_local_indexer: local_indexer={local_indexer is not None}, docs={len(local_indexer.documents) if local_indexer else 0}", file=os.sys.stderr)
-
         if local_indexer and local_indexer.documents:
             local_results = local_indexer.hybrid_search(query, top_k=top_k, strategy=strategy)
             for doc in local_results:
                 doc['data_source'] = 'Local Files'
             all_results.extend(local_results)
         elif source == "local":
-            print(f"[DEBUG search] Returning error message. local_indexer={local_indexer}, has_docs={local_indexer.documents if local_indexer else 'N/A'}", file=os.sys.stderr)
             return "Local file search is not configured. Set LOCAL_DOCS_PATH environment variable."
 
     if not all_results:
