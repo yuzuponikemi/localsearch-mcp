@@ -81,35 +81,48 @@ def get_status() -> str:
 
 
 @mcp.tool()
-def search(
+def query_internal_knowledge_base(
     query: str,
     top_k: int = 5,
     strategy: str = "hybrid",
     source: str = "all"
 ) -> str:
     """
-    Multi-source hybrid search across Wikipedia and local files.
+    Search internal confidential technical documents and proprietary knowledge bases.
 
-    Search through locally indexed Wikipedia articles and your personal files
-    using both keyword matching (BM25) and semantic similarity (vector embeddings).
-    Results are intelligently merged using Reciprocal Rank Fusion (RRF).
+    === CONTENT (What this tool searches) ===
+    This tool searches through INTERNAL, NON-PUBLIC sources including:
+    - Confidential design documents and architecture specifications
+    - Legacy hardware specifications and datasheets (e.g., custom ASIC designs, FPGA configs)
+    - Proprietary technology documentation and internal standards
+    - Company-specific regulations, guidelines, and best practices
+    - Internal meeting notes, project documentation, and technical memos
+    - Locally indexed Wikipedia articles (for offline general knowledge)
+
+    === WHEN TO USE THIS TOOL (Triggers) ===
+    PRIORITIZE this tool when the user asks about:
+    - "社内規定" (internal regulations), "設計書" (design documents)
+    - Past design decisions, legacy system specifications
+    - Hardware specifications with specific model numbers (e.g., "HW-2024-A", "CTRL-X100")
+    - Internal project codenames or proprietary terminology
+    - Questions that require company-specific knowledge NOT available on the public internet
+    - Offline search when internet access is unavailable
+
+    === WHEN NOT TO USE THIS TOOL (Negative Constraints) ===
+    DO NOT use this tool for:
+    - General Python/JavaScript coding questions (use web search or built-in knowledge)
+    - Publicly available library documentation (e.g., React, Django, NumPy)
+    - Current events, news, or real-time information
+    - Generic technical questions answerable via public Stack Overflow or documentation
 
     Args:
-        query: The search keywords or question (e.g., "machine learning algorithms")
+        query: The search keywords or question (e.g., "HW-2024-A電源仕様", "認証モジュール設計")
         top_k: Number of results to return per source (default: 5, max: 20)
         strategy: Search strategy - 'hybrid' (default, best results), 'keyword' (BM25 only), or 'semantic' (vector only)
         source: Data source - 'all' (default), 'wikipedia', or 'local'
 
     Returns:
         Formatted search results with titles, sources, and content snippets
-
-    Examples:
-        - source='all': Search both Wikipedia and local files (best for comprehensive results)
-        - source='wikipedia': Search only Wikipedia (good for general knowledge)
-        - source='local': Search only local files (good for personal notes/documents)
-        - strategy='hybrid': Combines keyword and semantic search for best results
-        - strategy='keyword': Traditional keyword-based search (fast, exact matches)
-        - strategy='semantic': Meaning-based search (finds similar concepts)
     """
     # Validate and limit top_k
     top_k = min(max(1, top_k), 20)
@@ -166,56 +179,78 @@ def search(
 
 
 @mcp.tool()
-def search_wikipedia(query: str, top_k: int = 3, strategy: str = "hybrid") -> str:
+def search_offline_wikipedia(query: str, top_k: int = 3, strategy: str = "hybrid") -> str:
     """
-    Search English Wikipedia for a given query using hybrid search (BM25 + Vector).
+    Search OFFLINE locally-indexed Wikipedia for general knowledge (no internet required).
 
-    This tool searches through locally indexed Wikipedia articles and returns
-    the most relevant results using both keyword matching (BM25) and semantic
-    similarity (vector embeddings). Use this when you need to find facts, history,
-    definitions, or general knowledge about any topic.
+    === CONTENT ===
+    Pre-indexed English Wikipedia articles stored locally. Useful for:
+    - Historical facts, scientific concepts, definitions
+    - Background knowledge to supplement internal document searches
+    - Offline environments where web search is unavailable
+
+    === WHEN TO USE ===
+    - User needs general encyclopedic knowledge AND is working offline
+    - Supplementing internal document searches with public background info
+    - Internet connectivity is restricted or unavailable
+
+    === WHEN NOT TO USE ===
+    - For internal/confidential company information (use search_internal_technical_documents)
+    - When up-to-date information is needed (this index may be outdated)
+    - When web search is available and preferred
 
     Args:
         query: The search keywords or question (e.g., "history of python programming")
         top_k: Number of results to return (default: 3, max: 10)
-        strategy: Search strategy - 'hybrid' (default, best results), 'keyword' (BM25 only), or 'semantic' (vector only)
+        strategy: Search strategy - 'hybrid' (default), 'keyword' (BM25 only), or 'semantic' (vector only)
 
     Returns:
         Formatted search results with titles, sources, and content snippets
-
-    Examples:
-        - strategy='hybrid': Combines keyword and semantic search for best results
-        - strategy='keyword': Traditional keyword-based search (fast, exact matches)
-        - strategy='semantic': Meaning-based search (finds similar concepts even without exact words)
     """
     # Use the unified search function with source='wikipedia'
-    return search(query=query, top_k=top_k, strategy=strategy, source="wikipedia")
+    return query_internal_knowledge_base(query=query, top_k=top_k, strategy=strategy, source="wikipedia")
 
 
 @mcp.tool()
-def search_local(query: str, top_k: int = 5, strategy: str = "hybrid") -> str:
+def search_internal_technical_documents(query: str, top_k: int = 5, strategy: str = "hybrid") -> str:
     """
-    Search your local files (Markdown, text) using hybrid search (BM25 + Vector).
+    Search internal confidential design documents, hardware specs, and proprietary technical knowledge.
 
-    This tool searches through your personal files and documents using both
-    keyword matching (BM25) and semantic similarity (vector embeddings).
-    Perfect for finding information in your Obsidian vault, notes, or documentation.
+    === CONTENT (What this tool searches) ===
+    This tool provides access to INTERNAL, CONFIDENTIAL company resources:
+    - 機密設計書 (Confidential design documents and architecture specs)
+    - レガシーハードウェア仕様書 (Legacy hardware specifications, e.g., HW-2024-A, CTRL-X100, PWR-500)
+    - 独自技術ドキュメント (Proprietary technology documentation)
+    - 社内規定・ガイドライン (Internal regulations and guidelines)
+    - プロジェクト議事録・技術メモ (Project meeting notes and technical memos)
+
+    === WHEN TO USE THIS TOOL (Triggers) - PRIORITIZE THIS TOOL ===
+    Use this tool FIRST when the user asks about:
+    - 「社内規定」「内部ガイドライン」(internal regulations/guidelines)
+    - 「過去の設計」「レガシーシステム」(past designs, legacy systems)
+    - Hardware specs with model numbers: "HW-2024-A仕様", "CTRL-X100 pinout", "PWR-500電源設計"
+    - Internal project codenames (e.g., "Project Phoenix", "Eagle認証モジュール")
+    - Company-specific terminology or processes not found on public internet
+    - 「〇〇の設計書どこ？」「△△の仕様教えて」type questions
+
+    === WHEN NOT TO USE THIS TOOL (Negative Constraints) ===
+    DO NOT use this tool for:
+    ✗ General Python/JavaScript/TypeScript coding questions
+    ✗ Public library docs (React, Django, NumPy, TensorFlow, etc.)
+    ✗ Stack Overflow-type questions with publicly available answers
+    ✗ Current events, news, or real-time market data
+    ✗ Generic "how to" programming tutorials
 
     Args:
-        query: The search keywords or question (e.g., "project meeting notes")
+        query: Search terms (e.g., "HW-2024-A電源仕様", "認証フロー設計", "プロジェクトX要件定義")
         top_k: Number of results to return (default: 5, max: 20)
-        strategy: Search strategy - 'hybrid' (default, best results), 'keyword' (BM25 only), or 'semantic' (vector only)
+        strategy: 'hybrid' (default, recommended), 'keyword' (exact match), or 'semantic' (concept match)
 
     Returns:
-        Formatted search results with titles, file paths, and content snippets
-
-    Examples:
-        - strategy='hybrid': Combines keyword and semantic search for best results
-        - strategy='keyword': Traditional keyword-based search (fast, exact matches)
-        - strategy='semantic': Meaning-based search (finds similar concepts)
+        Formatted search results with document titles, file paths, and content excerpts
     """
     # Use the unified search function with source='local'
-    return search(query=query, top_k=top_k, strategy=strategy, source="local")
+    return query_internal_knowledge_base(query=query, top_k=top_k, strategy=strategy, source="local")
 
 
 if __name__ == "__main__":
