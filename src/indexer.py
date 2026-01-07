@@ -26,7 +26,7 @@ from src.logger import logger
 WIKI_INDEX_PATH = "data/wiki_index.pkl"
 WIKI_CHROMA_PATH = "data/chroma_db"
 LOCAL_CHROMA_PATH = "data/local_chroma_db"
-STATE_FILE_PATH = "data/indexing_state.json"
+STATE_FILE_DIR = "data/indexing_states"  # Directory for per-path state files
 
 # Number of documents to index for Wikipedia
 DEFAULT_SUBSET_SIZE = 1_000_000
@@ -331,6 +331,7 @@ class LocalFileIndexer(BaseHybridIndexer):
     Local file indexer that scans directories for Markdown/text files.
     Rebuilds BM25 index on each startup (fast for local files).
     Uses persistent vector index with upsert for updates.
+    Each directory path gets its own ChromaDB collection and state file.
     """
 
     def __init__(self, directory_path: str, extensions: List[str] = None):
@@ -341,19 +342,50 @@ class LocalFileIndexer(BaseHybridIndexer):
             directory_path: Directory to scan for files
             extensions: File extensions to include (default: [".md", ".txt", ".py"])
         """
-        super().__init__(collection_name="local_files", chroma_path=LOCAL_CHROMA_PATH)
-        self.directory_path = directory_path
+        # Normalize path to absolute path for consistent hashing
+        self.directory_path = os.path.abspath(directory_path)
         self.extensions = extensions if extensions else [".md", ".txt", ".py"]
+        
+        # Generate path-specific collection name and state file
+        self.path_hash = self._generate_path_hash(self.directory_path)
+        collection_name = f"local_files_{self.path_hash}"
+        self.state_file_path = os.path.join(STATE_FILE_DIR, f"state_{self.path_hash}.json")
+        
+        super().__init__(collection_name=collection_name, chroma_path=LOCAL_CHROMA_PATH)
+        
         # チャンキング戦略クラスを初期化
         self.chunker = ChunkingStrategy()
         # Load indexing state for incremental updates
         self.state = self._load_state()
+        
+        logger.info(
+            f"LocalFileIndexer initialized",
+            directory=self.directory_path,
+            collection=collection_name,
+            state_file=self.state_file_path
+        )
+    
+    @staticmethod
+    def _generate_path_hash(path: str) -> str:
+        """
+        Generate a short hash from the directory path for collection naming.
+        Uses first 12 characters of MD5 hash for compactness.
+        
+        Args:
+            path: Absolute directory path
+            
+        Returns:
+            Short hash string (12 chars)
+        """
+        path_normalized = os.path.normpath(path).lower()
+        hash_obj = hashlib.md5(path_normalized.encode('utf-8'))
+        return hash_obj.hexdigest()[:12]
 
     def _load_state(self) -> Dict:
-        """Load indexing state from file."""
-        if os.path.exists(STATE_FILE_PATH):
+        """Load indexing state from path-specific state file."""
+        if os.path.exists(self.state_file_path):
             try:
-                with open(STATE_FILE_PATH, "r", encoding="utf-8") as f:
+                with open(self.state_file_path, "r", encoding="utf-8") as f:
                     return json.load(f)
             except Exception as e:
                 logger.warning(f"Failed to load state file: {e}")
@@ -361,10 +393,10 @@ class LocalFileIndexer(BaseHybridIndexer):
         return {}
 
     def _save_state(self):
-        """Save indexing state to file."""
+        """Save indexing state to path-specific state file."""
         try:
-            os.makedirs(os.path.dirname(STATE_FILE_PATH), exist_ok=True)
-            with open(STATE_FILE_PATH, "w", encoding="utf-8") as f:
+            os.makedirs(os.path.dirname(self.state_file_path), exist_ok=True)
+            with open(self.state_file_path, "w", encoding="utf-8") as f:
                 json.dump(self.state, f, indent=2, ensure_ascii=False)
         except Exception as e:
             logger.error(f"Failed to save state file: {e}")

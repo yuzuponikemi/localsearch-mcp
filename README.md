@@ -106,6 +106,92 @@ uv run python -m src
 # With local files
 LOCAL_DOCS_PATH="/path/to/your/notes" uv run python -m src
 ```
+The server will:
+1. Load the pre-built Wikipedia index (cached, fast)
+2. Scan and index local files if `LOCAL_DOCS_PATH` is set (quick for typical document collections)
+3. Start listening for MCP requests on stdio
+4. Provide search tools: `search`, `search_wikipedia`, and `search_local`
+
+### Running Local-Only (skip Wikipedia)
+
+To run the MCP server that only indexes and serves your local documents (no Wikipedia), set `SKIP_WIKIPEDIA=true` and `LOCAL_DOCS_PATH` before starting the server.
+
+Unix / macOS example:
+
+```bash
+export SKIP_WIKIPEDIA=true
+export LOCAL_DOCS_PATH="/absolute/path/to/your/notes"
+uv run python -m src
+```
+
+Windows PowerShell example (explicit absolute `uv` path shown):
+
+```powershell
+$env:SKIP_WIKIPEDIA = "true"
+$env:LOCAL_DOCS_PATH = "C:\Users\you\Documents\Notes"
+# Windows: call uv with an absolute path if it's installed in a virtualenv or not on PATH
+&C:\Users\you\.venv\Scripts\uv.exe run python -m src
+```
+
+Windows Command Prompt example:
+
+```cmd
+set SKIP_WIKIPEDIA=true
+set LOCAL_DOCS_PATH=C:\Users\you\Documents\Notes
+C:\Users\you\AppData\Roaming\Python\Python310\Scripts\uv.exe run python -m src
+```
+
+Notes:
+- `SKIP_WIKIPEDIA=true` prevents loading/building the Wikipedia index.
+- `LOCAL_DOCS_PATH` should be an absolute path to your documents folder (Markdown/text files).
+
+### Running the included tests with explicit LOCAL_DOCS_PATH
+
+The test scripts spawn their own server subprocess and pass environment variables. You can also run the server directly and then run the client tests.
+
+Run test client with explicit path (Unix/macOS):
+
+```bash
+LOCAL_DOCS_PATH="/absolute/path/to/test_docs" uv run python tests/verify_with_ollama.py --local
+```
+
+Windows PowerShell example (absolute `uv` path):
+
+```powershell
+$env:LOCAL_DOCS_PATH = "C:\absolute\path\to\test_docs"
+&C:\path\to\uv.exe run python tests/verify_with_ollama.py --local
+```
+
+### Path isolation and index management
+
+**Automatic Path Isolation** (v0.2+): Each `LOCAL_DOCS_PATH` now gets its own ChromaDB collection and state file, preventing data mixing when switching between different document directories. The server automatically:
+- Generates a unique collection name based on the directory path hash
+- Maintains separate indexing state for each path in `data/indexing_states/`
+- Keeps vector embeddings isolated in path-specific ChromaDB collections
+
+This means you can safely switch between different `LOCAL_DOCS_PATH` values without worrying about data contamination.
+
+To verify path isolation is working, run the test suite:
+
+```bash
+uv run python tests/test_path_isolation.py
+```
+
+**Manual cleanup** (optional): If you want to completely reset all local indexes and start fresh:
+
+Unix / macOS:
+
+```bash
+rm -rf data/local_chroma_db data/indexing_states
+```
+
+Windows PowerShell:
+
+```powershell
+Remove-Item -Recurse -Force data\local_chroma_db, data\indexing_states
+```
+
+Note: The old `data/indexing_state.json` file is no longer used (replaced by per-path state files in `data/indexing_states/`).
 
 The server will:
 1. Load the pre-built Wikipedia index (cached, fast)
