@@ -101,6 +101,11 @@ async def test_local_indexing():
 
                 result_text = result.content[0].text
 
+                # Debug output
+                print(f"\n[DEBUG] Result length: {len(result_text)} chars")
+                print(f"[DEBUG] First 500 chars: {result_text[:500]}")
+                print(f"[DEBUG] 'Python' in result: {'Python' in result_text}")
+
                 # Check if result contains expected content
                 if "Python" in result_text and len(result_text) > 100:
                     log_test("Local Document Indexing", True, f"Found {len(result_text)} chars of results")
@@ -162,8 +167,15 @@ async def test_search_results():
 
                     result_text = result.content[0].text.lower()
 
+                    # Debug output
+                    print(f"\n[DEBUG] Query: {test_case['query']}")
+                    print(f"[DEBUG] Expected keywords: {test_case['expected_keywords']}")
+                    print(f"[DEBUG] Result length: {len(result_text)} chars")
+                    print(f"[DEBUG] First 300 chars: {result_text[:300]}")
+
                     # Check if at least one expected keyword is in results
                     found_keywords = [kw for kw in test_case["expected_keywords"] if kw.lower() in result_text]
+                    print(f"[DEBUG] Found keywords: {found_keywords}")
 
                     if found_keywords:
                         passed_queries += 1
@@ -219,7 +231,7 @@ async def test_incremental_indexing():
                     initial_found = "quantum computing" in result1_text.lower()
 
             # Modify the document
-            await asyncio.sleep(0.1)  # Ensure mtime changes
+            await asyncio.sleep(1.0)  # Ensure mtime changes (some filesystems have 1-second resolution)
             with open(initial_doc, "w") as f:
                 f.write("# Updated Document\nThis is the updated content about neural networks and deep learning.")
 
@@ -247,7 +259,10 @@ async def test_incremental_indexing():
                         arguments={"query": "neural networks", "top_k": 1}
                     )
                     result3_text = result3.content[0].text
+                    print(f"\n[DEBUG Incremental] Query: neural networks")
+                    print(f"[DEBUG Incremental] Result: {result3_text[:300]}")
                     new_content_found = "neural networks" in result3_text.lower() or "deep learning" in result3_text.lower()
+                    print(f"[DEBUG Incremental] new_content_found: {new_content_found}")
 
                     # Search for content in new file
                     result4 = await session.call_tool(

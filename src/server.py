@@ -18,7 +18,49 @@ mcp = FastMCP("MultiSourceLocalSearch")
 
 # Global indexer instances
 wiki_indexer = WikiIndexer()
-local_indexer = None  # Will be initialized if LOCAL_DOCS_PATH is set
+local_indexer = None  # Will be initialized on first use if LOCAL_DOCS_PATH is set
+_local_indexer_initialized = False
+
+
+def _ensure_local_indexer():
+    """Initialize local indexer on first use (lazy initialization)."""
+    global local_indexer, _local_indexer_initialized
+
+    if _local_indexer_initialized:
+        return
+
+    _local_indexer_initialized = True
+
+    local_docs_path = os.environ.get("LOCAL_DOCS_PATH")
+    print(f"[DEBUG _ensure_local_indexer] LOCAL_DOCS_PATH={local_docs_path}", file=os.sys.stderr)
+    if local_docs_path:
+        print(f"📁 Loading local files from: {local_docs_path}", file=os.sys.stderr)
+        try:
+            local_indexer = LocalFileIndexer(local_docs_path)
+            local_indexer.build_index()
+            print(f"[DEBUG] local_indexer initialized: {local_indexer is not None}, docs: {len(local_indexer.documents) if local_indexer else 0}", file=os.sys.stderr)
+        except Exception as e:
+            print(f"⚠️  Warning: Failed to load local files: {e}", file=os.sys.stderr)
+            print("   Local file search will be disabled.", file=os.sys.stderr)
+            import traceback
+            traceback.print_exc(file=os.sys.stderr)
+    else:
+        print("[DEBUG] LOCAL_DOCS_PATH not set!", file=os.sys.stderr)
+
+
+def _ensure_wiki_indexer():
+    """Initialize Wikipedia indexer on first use (lazy initialization)."""
+    global wiki_indexer
+
+    skip_wiki = os.environ.get("SKIP_WIKIPEDIA", "").lower() == "true"
+
+    if skip_wiki:
+        print("⏭️  Skipping Wikipedia index (SKIP_WIKIPEDIA=true)", file=os.sys.stderr)
+        return
+
+    if not wiki_indexer.bm25:
+        print("📚 Loading Wikipedia index...", file=os.sys.stderr)
+        wiki_indexer.load_or_build()
 
 
 @mcp.resource("config://status")
@@ -87,22 +129,27 @@ def search(
 
     # Search Wikipedia
     if source in ["all", "wikipedia"]:
-        if not wiki_indexer.bm25:
-            wiki_indexer.load_or_build()
+        _ensure_wiki_indexer()
 
-        wiki_results = wiki_indexer.hybrid_search(query, top_k=top_k, strategy=strategy)
-        for doc in wiki_results:
-            doc['data_source'] = 'Wikipedia'
-        all_results.extend(wiki_results)
+        if wiki_indexer.bm25:
+            wiki_results = wiki_indexer.hybrid_search(query, top_k=top_k, strategy=strategy)
+            for doc in wiki_results:
+                doc['data_source'] = 'Wikipedia'
+            all_results.extend(wiki_results)
 
     # Search Local Files
     if source in ["all", "local"]:
+        _ensure_local_indexer()
+
+        print(f"[DEBUG search] After _ensure_local_indexer: local_indexer={local_indexer is not None}, docs={len(local_indexer.documents) if local_indexer else 0}", file=os.sys.stderr)
+
         if local_indexer and local_indexer.documents:
             local_results = local_indexer.hybrid_search(query, top_k=top_k, strategy=strategy)
             for doc in local_results:
                 doc['data_source'] = 'Local Files'
             all_results.extend(local_results)
         elif source == "local":
+            print(f"[DEBUG search] Returning error message. local_indexer={local_indexer}, has_docs={local_indexer.documents if local_indexer else 'N/A'}", file=os.sys.stderr)
             return "Local file search is not configured. Set LOCAL_DOCS_PATH environment variable."
 
     if not all_results:
@@ -182,26 +229,5 @@ if __name__ == "__main__":
 
     print("🚀 Starting Multi-Source Local Search MCP Server...", file=sys.stderr)
 
-    # Load Wikipedia index
-    print("\n📚 Loading Wikipedia index...", file=sys.stderr)
-    wiki_indexer.load_or_build()
-
-    # Initialize local file indexer if configured
-    local_docs_path = os.environ.get("LOCAL_DOCS_PATH")
-    if local_docs_path:
-        print(f"\n📁 Loading local files from: {local_docs_path}", file=sys.stderr)
-        try:
-            # Update the global local_indexer variable
-            globals()['local_indexer'] = LocalFileIndexer(local_docs_path)
-            local_indexer.build_index()
-        except Exception as e:
-            print(f"⚠️  Warning: Failed to load local files: {e}", file=sys.stderr)
-            print("   Local file search will be disabled.", file=sys.stderr)
-    else:
-        print("\n📁 LOCAL_DOCS_PATH not set. Local file search disabled.", file=sys.stderr)
-        print("   Set LOCAL_DOCS_PATH environment variable to enable local file search.", file=sys.stderr)
-
-    print("\n✅ Server ready!\n", file=sys.stderr)
-
-    # Start the MCP server
+    # Start the MCP server (initialization will happen in on_startup hook)
     mcp.run()
