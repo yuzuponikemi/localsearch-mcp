@@ -209,6 +209,7 @@ __marimo__/
 # Project specific
 data/*.pkl
 data/*.db
+state*.json
 data/chroma_db/
 data/local_chroma_db/
 indexing_state.json

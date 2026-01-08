@@ -6,6 +6,8 @@ Provides offline search via MCP protocol combining:
 Supports hybrid search: BM25 (keyword) + Vector (semantic) search.
 """
 import os
+import sys
+import asyncio
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 from src.indexer import WikiIndexer, LocalFileIndexer
@@ -16,10 +18,11 @@ load_dotenv()
 # Initialize MCP server
 mcp = FastMCP("MultiSourceLocalSearch")
 
-# Global indexer instances
-wiki_indexer = WikiIndexer()
-local_indexer = None  # Will be initialized on first use if LOCAL_DOCS_PATH is set
+# Global indexer instances - will be initialized lazily
+wiki_indexer = None
+local_indexer = None
 _local_docs_path_cached = None
+_indexers_initialized = False
 
 
 def _ensure_local_indexer():
@@ -35,13 +38,13 @@ def _ensure_local_indexer():
     _local_docs_path_cached = local_docs_path
 
     if local_docs_path:
-        print(f"📁 Loading local files from: {local_docs_path}", file=os.sys.stderr)
+        print(f"📁 Loading local files from: {local_docs_path}", file=sys.stderr)
         try:
             local_indexer = LocalFileIndexer(local_docs_path)
             local_indexer.build_index()
         except Exception as e:
-            print(f"⚠️  Warning: Failed to load local files: {e}", file=os.sys.stderr)
-            print("   Local file search will be disabled.", file=os.sys.stderr)
+            print(f"⚠️  Warning: Failed to load local files: {e}", file=sys.stderr)
+            print("   Local file search will be disabled.", file=sys.stderr)
             local_indexer = None
 
 
@@ -49,33 +52,108 @@ def _ensure_wiki_indexer():
     """Initialize Wikipedia indexer on first use (lazy initialization)."""
     global wiki_indexer
 
+    if wiki_indexer is not None:
+        return  # Already initialized
+
     skip_wiki = os.environ.get("SKIP_WIKIPEDIA", "").lower() == "true"
 
     if skip_wiki:
-        print("⏭️  Skipping Wikipedia index (SKIP_WIKIPEDIA=true)", file=os.sys.stderr)
+        print("⏭️  Skipping Wikipedia index (SKIP_WIKIPEDIA=true)", file=sys.stderr)
         return
 
-    if not wiki_indexer.bm25:
-        print("📚 Loading Wikipedia index...", file=os.sys.stderr)
-        wiki_indexer.load_or_build()
+    print("📚 Loading Wikipedia index...", file=sys.stderr)
+    wiki_indexer = WikiIndexer()
+    wiki_indexer.load_or_build()
+
+
+async def _initialize_indexers_async():
+    """Initialize indexers asynchronously in background."""
+    global _indexers_initialized
+    
+    if _indexers_initialized:
+        return
+    
+    print("🚀 Starting Multi-Source Local Search MCP Server...", file=sys.stderr)
+    print("⏳ Initializing search indices in background...", file=sys.stderr)
+    
+    try:
+        # Run initialization in thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        
+        # Initialize Wikipedia indexer in thread pool
+        await loop.run_in_executor(None, _ensure_wiki_indexer)
+        
+        # Initialize local indexer in thread pool
+        await loop.run_in_executor(None, _ensure_local_indexer)
+        
+        _indexers_initialized = True
+        print("✅ Search indices initialized successfully!", file=sys.stderr)
+        
+    except Exception as e:
+        print(f"⚠️  Warning: Failed to initialize some indices: {e}", file=sys.stderr)
+        _indexers_initialized = True  # Mark as initialized even with partial failure
+
+
+def _startup_initialization():
+    """Synchronous initialization that can be called at startup."""
+    print("🎯 MCP Server starting - search indices will load in background...", file=sys.stderr)
+    # Start background initialization without waiting
+    try:
+        # Try to create background task if event loop exists
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(_initialize_indexers_async())
+        else:
+            # If no event loop, start the initialization in a thread
+            import threading
+            thread = threading.Thread(target=_background_init_sync, daemon=True)
+            thread.start()
+    except RuntimeError:
+        # No event loop, use thread-based initialization
+        import threading
+        thread = threading.Thread(target=_background_init_sync, daemon=True)
+        thread.start()
+
+
+def _background_init_sync():
+    """Synchronous background initialization for threading."""
+    try:
+        _ensure_wiki_indexer()
+        _ensure_local_indexer()
+        global _indexers_initialized
+        _indexers_initialized = True
+        print("✅ Search indices initialized successfully!", file=sys.stderr)
+    except Exception as e:
+        print(f"⚠️  Warning: Failed to initialize some indices: {e}", file=sys.stderr)
+        _indexers_initialized = True
 
 
 @mcp.resource("config://status")
 def get_status() -> str:
     """Check if the search indices are loaded and ready."""
     status_lines = []
+    
+    # Overall initialization status
+    if not _indexers_initialized:
+        status_lines.append("🔄 Initialization in progress...")
+    else:
+        status_lines.append("✅ Server initialized")
 
     # Wikipedia status
-    if wiki_indexer.bm25:
+    if wiki_indexer and hasattr(wiki_indexer, 'bm25') and wiki_indexer.bm25:
         status_lines.append(f"📚 Wikipedia: {len(wiki_indexer.documents)} documents indexed")
     else:
-        status_lines.append("📚 Wikipedia: Not loaded")
+        status_lines.append("📚 Wikipedia: Not loaded or loading...")
 
     # Local files status
-    if local_indexer and local_indexer.bm25:
+    if local_indexer and hasattr(local_indexer, 'bm25') and local_indexer.bm25:
         status_lines.append(f"📁 Local Files: {len(local_indexer.documents)} files indexed")
     else:
-        status_lines.append("📁 Local Files: Not configured or empty")
+        local_docs_path = os.environ.get("LOCAL_DOCS_PATH")
+        if local_docs_path:
+            status_lines.append("📁 Local Files: Not loaded or loading...")
+        else:
+            status_lines.append("📁 Local Files: Not configured (set LOCAL_DOCS_PATH)")
 
     return "\n".join(status_lines)
 
@@ -139,25 +217,37 @@ def query_internal_knowledge_base(
 
     # Search Wikipedia
     if source in ["all", "wikipedia"]:
+        if not _indexers_initialized:
+            return "⏳ Search indices are still initializing. Please wait a moment and try again."
+            
         _ensure_wiki_indexer()
 
-        if wiki_indexer.bm25:
+        if wiki_indexer and hasattr(wiki_indexer, 'bm25') and wiki_indexer.bm25:
             wiki_results = wiki_indexer.hybrid_search(query, top_k=top_k, strategy=strategy)
             for doc in wiki_results:
                 doc['data_source'] = 'Wikipedia'
             all_results.extend(wiki_results)
+        elif source == "wikipedia":
+            return "Wikipedia search is not available. Index may be loading or disabled."
 
     # Search Local Files
     if source in ["all", "local"]:
+        if not _indexers_initialized:
+            return "⏳ Search indices are still initializing. Please wait a moment and try again."
+            
         _ensure_local_indexer()
 
-        if local_indexer and local_indexer.documents:
+        if local_indexer and hasattr(local_indexer, 'documents') and local_indexer.documents:
             local_results = local_indexer.hybrid_search(query, top_k=top_k, strategy=strategy)
             for doc in local_results:
                 doc['data_source'] = 'Local Files'
             all_results.extend(local_results)
         elif source == "local":
-            return "Local file search is not configured. Set LOCAL_DOCS_PATH environment variable."
+            local_docs_path = os.environ.get("LOCAL_DOCS_PATH")
+            if not local_docs_path:
+                return "Local file search is not configured. Set LOCAL_DOCS_PATH environment variable."
+            else:
+                return "Local file search is not ready. Index may be loading or empty."
 
     if not all_results:
         return "No results found. Try rephrasing your query or using different keywords."
@@ -254,9 +344,8 @@ def search_internal_technical_documents(query: str, top_k: int = 5, strategy: st
 
 
 if __name__ == "__main__":
-    import sys
-
-    print("🚀 Starting Multi-Source Local Search MCP Server...", file=sys.stderr)
-
-    # Start the MCP server (initialization will happen in on_startup hook)
+    # Initialize background loading
+    _startup_initialization()
+    
+    # Start the MCP server
     mcp.run()

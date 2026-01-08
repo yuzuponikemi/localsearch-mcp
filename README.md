@@ -494,10 +494,37 @@ Delete `data/wiki_index.pkl` and restart the server.
 
 ## Troubleshooting
 
+### Server Initialization Timeout
+If VS Code shows "Waiting for server to respond to `initialize` request" and times out:
+
+**Solution 1: Skip Wikipedia for faster startup**
+```bash
+# In your .env file or environment variables
+SKIP_WIKIPEDIA=true
+```
+
+**Solution 2: Check server status**
+The server initializes indices in the background. Use the status resource to check progress:
+```bash
+# Check if indices are loaded
+echo 'config://status' | python src/server.py
+```
+
+**Solution 3: Reduce Wikipedia dataset size**
+```bash
+# In your .env file - use smaller dataset for testing
+WIKI_SUBSET_SIZE=10000
+```
+
+The server now initializes asynchronously - MCP will respond immediately, and indices load in the background.
+
 ### Index Not Building
 - Check disk space (needs ~500MB for Simple Wikipedia, ~20GB for full)
 - Ensure stable internet connection for initial download
 - Check Python version (3.10+ required)
+
+### Search Returns "Initializing" Message
+This is normal on first startup. The server is loading indices in the background. Wait 30-60 seconds and try again.
 
 ### Ollama Connection Fails
 - Verify Ollama is running: `ollama list`
