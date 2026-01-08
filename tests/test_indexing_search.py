@@ -1,5 +1,5 @@
 """
-CI/CD Test Suite for LocalSearch MCP Server
+CI/CD Test Suite for LocalKB MCP Server
 
 Tests incremental indexing and search functionality without requiring LLM.
 Designed to run in CI/CD environments using test documents in the repository.
@@ -58,7 +58,7 @@ async def test_mcp_connection():
 
                 # Check if required tools exist
                 tool_names = [t.name for t in tools.tools]
-                required_tools = ["search_local", "search_wikipedia", "search"]
+                required_tools = ["search_internal_technical_documents", "search_offline_wikipedia", "query_internal_knowledge_base"]
 
                 missing_tools = [t for t in required_tools if t not in tool_names]
 
@@ -95,7 +95,7 @@ async def test_local_indexing():
 
                 # Test query that should match test documents
                 result = await session.call_tool(
-                    "search_local",
+                    "search_internal_technical_documents",
                     arguments={"query": "Python programming language", "top_k": 5}
                 )
 
@@ -156,7 +156,7 @@ async def test_search_results():
 
                 for test_case in test_queries:
                     result = await session.call_tool(
-                        "search_local",
+                        "search_internal_technical_documents",
                         arguments={"query": test_case["query"], "top_k": 3}
                     )
 
@@ -214,7 +214,7 @@ This is the initial content about quantum computing. Quantum computing is a revo
                     await session.initialize()
 
                     result1 = await session.call_tool(
-                        "search_local",
+                        "search_internal_technical_documents",
                         arguments={"query": "quantum computing", "top_k": 1}
                     )
 
@@ -248,7 +248,7 @@ This is a new document about blockchain technology. Blockchain is a distributed 
 
                     # Search for new content in modified file
                     result3 = await session.call_tool(
-                        "search_local",
+                        "search_internal_technical_documents",
                         arguments={"query": "neural networks deep learning", "top_k": 3}
                     )
                     result3_text = result3.content[0].text
@@ -256,7 +256,7 @@ This is a new document about blockchain technology. Blockchain is a distributed 
 
                     # Search for content in new file
                     result4 = await session.call_tool(
-                        "search_local",
+                        "search_internal_technical_documents",
                         arguments={"query": "blockchain technology", "top_k": 3}
                     )
                     result4_text = result4.content[0].text
@@ -297,13 +297,13 @@ async def test_search_strategies():
 
                 # Test keyword strategy
                 result_keyword = await session.call_tool(
-                    "search_local",
+                    "search_internal_technical_documents",
                     arguments={"query": "Python Django Flask", "top_k": 3, "strategy": "keyword"}
                 )
 
                 # Test hybrid strategy
                 result_hybrid = await session.call_tool(
-                    "search_local",
+                    "search_internal_technical_documents",
                     arguments={"query": "Python web frameworks", "top_k": 3, "strategy": "hybrid"}
                 )
 
@@ -327,7 +327,7 @@ async def test_search_strategies():
 async def run_all_tests():
     """Run all CI/CD tests."""
     print("=" * 70)
-    print("LocalSearch MCP Server - CI/CD Test Suite")
+    print("LocalKB MCP Server - CI/CD Test Suite")
     print("=" * 70)
     print(f"Test documents path: {TEST_DOCS_PATH}")
     print()
