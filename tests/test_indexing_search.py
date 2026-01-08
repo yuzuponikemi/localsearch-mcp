@@ -1,5 +1,5 @@
 """
-CI/CD Test Suite for LocalSearch MCP Server
+CI/CD Test Suite for LocalKB MCP Server
 
 Tests incremental indexing and search functionality without requiring LLM.
 Designed to run in CI/CD environments using test documents in the repository.
@@ -20,6 +20,61 @@ TEST_DOCS_PATH = os.path.join(PROJECT_ROOT, "test_docs")
 
 # Test results
 test_results = []
+
+# Configuration for waiting
+INDEX_WAIT_TIMEOUT = 120  # Maximum seconds to wait for indexing
+INDEX_POLL_INTERVAL = 2   # Seconds between status checks
+
+
+async def wait_for_index_ready(session: ClientSession, timeout: float = INDEX_WAIT_TIMEOUT, check_local: bool = True) -> bool:
+    """
+    Wait for the indexer to be ready by polling the search tool.
+    
+    Args:
+        session: MCP client session
+        timeout: Maximum time to wait in seconds
+        check_local: If True, wait for local files to be indexed
+        
+    Returns:
+        True if indexer is ready, False if timeout
+    """
+    import time
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        try:
+            # Try a simple search to check if indexer is ready
+            result = await session.call_tool(
+                "search_internal_technical_documents",
+                arguments={"query": "test", "top_k": 1}
+            )
+            result_text = result.content[0].text
+            
+            # Check if we got actual results (not an error message)
+            if check_local:
+                # For local files, we need to see actual search results
+                if "Result" in result_text or "【" in result_text:
+                    print(f"   Index ready after {time.time() - start_time:.1f}s", file=sys.stderr)
+                    return True
+                elif "still initializing" in result_text.lower():
+                    print(f"   Waiting for index... ({time.time() - start_time:.0f}s)", file=sys.stderr)
+                elif "not ready" in result_text.lower() or "not configured" in result_text.lower():
+                    print(f"   Waiting for index... ({time.time() - start_time:.0f}s)", file=sys.stderr)
+                else:
+                    # Got some response, might be "No results" which is OK
+                    print(f"   Index ready after {time.time() - start_time:.1f}s", file=sys.stderr)
+                    return True
+            else:
+                # Just check we can call the tool without error
+                return True
+                
+        except Exception as e:
+            print(f"   Index check error: {e}", file=sys.stderr)
+        
+        await asyncio.sleep(INDEX_POLL_INTERVAL)
+    
+    print(f"   Index timeout after {timeout}s", file=sys.stderr)
+    return False
 
 
 def log_test(test_name: str, passed: bool, message: str = ""):
@@ -58,7 +113,7 @@ async def test_mcp_connection():
 
                 # Check if required tools exist
                 tool_names = [t.name for t in tools.tools]
-                required_tools = ["search_local", "search_wikipedia", "search"]
+                required_tools = ["search_internal_technical_documents", "search_offline_wikipedia", "query_internal_knowledge_base"]
 
                 missing_tools = [t for t in required_tools if t not in tool_names]
 
@@ -93,9 +148,14 @@ async def test_local_indexing():
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
+                # Wait for index to be ready
+                if not await wait_for_index_ready(session):
+                    log_test("Local Document Indexing", False, "Timeout waiting for index")
+                    return False
+
                 # Test query that should match test documents
                 result = await session.call_tool(
-                    "search_local",
+                    "search_internal_technical_documents",
                     arguments={"query": "Python programming language", "top_k": 5}
                 )
 
@@ -151,12 +211,17 @@ async def test_search_results():
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
+                # Wait for index to be ready
+                if not await wait_for_index_ready(session):
+                    log_test("Search Results Quality", False, "Timeout waiting for index")
+                    return False
+
                 passed_queries = 0
                 failed_queries = []
 
                 for test_case in test_queries:
                     result = await session.call_tool(
-                        "search_local",
+                        "search_internal_technical_documents",
                         arguments={"query": test_case["query"], "top_k": 3}
                     )
 
@@ -213,8 +278,13 @@ This is the initial content about quantum computing. Quantum computing is a revo
                 async with ClientSession(read, write) as session:
                     await session.initialize()
 
+                    # Wait for index to be ready
+                    if not await wait_for_index_ready(session):
+                        log_test("Incremental Indexing", False, "Timeout waiting for initial index")
+                        return False
+
                     result1 = await session.call_tool(
-                        "search_local",
+                        "search_internal_technical_documents",
                         arguments={"query": "quantum computing", "top_k": 1}
                     )
 
@@ -242,13 +312,18 @@ This is a new document about blockchain technology. Blockchain is a distributed 
                 async with ClientSession(read, write) as session:
                     await session.initialize()
 
+                    # Wait for index to be ready (this will re-index modified/new files)
+                    if not await wait_for_index_ready(session):
+                        log_test("Incremental Indexing", False, "Timeout waiting for updated index")
+                        return False
+
                     # Note: We don't check if old content is gone because BM25 may still
                     # return the file if other keywords match. The key test is that
                     # new content can be found.
 
                     # Search for new content in modified file
                     result3 = await session.call_tool(
-                        "search_local",
+                        "search_internal_technical_documents",
                         arguments={"query": "neural networks deep learning", "top_k": 3}
                     )
                     result3_text = result3.content[0].text
@@ -256,7 +331,7 @@ This is a new document about blockchain technology. Blockchain is a distributed 
 
                     # Search for content in new file
                     result4 = await session.call_tool(
-                        "search_local",
+                        "search_internal_technical_documents",
                         arguments={"query": "blockchain technology", "top_k": 3}
                     )
                     result4_text = result4.content[0].text
@@ -295,15 +370,20 @@ async def test_search_strategies():
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
+                # Wait for index to be ready
+                if not await wait_for_index_ready(session):
+                    log_test("Search Strategies", False, "Timeout waiting for index")
+                    return False
+
                 # Test keyword strategy
                 result_keyword = await session.call_tool(
-                    "search_local",
+                    "search_internal_technical_documents",
                     arguments={"query": "Python Django Flask", "top_k": 3, "strategy": "keyword"}
                 )
 
                 # Test hybrid strategy
                 result_hybrid = await session.call_tool(
-                    "search_local",
+                    "search_internal_technical_documents",
                     arguments={"query": "Python web frameworks", "top_k": 3, "strategy": "hybrid"}
                 )
 
@@ -327,7 +407,7 @@ async def test_search_strategies():
 async def run_all_tests():
     """Run all CI/CD tests."""
     print("=" * 70)
-    print("LocalSearch MCP Server - CI/CD Test Suite")
+    print("LocalKB MCP Server - CI/CD Test Suite")
     print("=" * 70)
     print(f"Test documents path: {TEST_DOCS_PATH}")
     print()

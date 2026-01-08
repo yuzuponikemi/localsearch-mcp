@@ -1,7 +1,7 @@
 [project]
-name = "local-search-mcp"
-version = "0.1.0"
-description = "Offline Wikipedia Search MCP Server"
+name = "localkb"
+version = "0.2.0"
+description = "Local Knowledge Base MCP Server with Citation Support"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

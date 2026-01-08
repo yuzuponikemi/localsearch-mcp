@@ -16,7 +16,7 @@ from src.indexer import WikiIndexer, LocalFileIndexer
 load_dotenv()
 
 # Initialize MCP server
-mcp = FastMCP("MultiSourceLocalSearch")
+mcp = FastMCP("LocalKB")
 
 # Global indexer instances - will be initialized lazily
 wiki_indexer = None
@@ -217,9 +217,7 @@ def query_internal_knowledge_base(
 
     # Search Wikipedia
     if source in ["all", "wikipedia"]:
-        if not _indexers_initialized:
-            return "⏳ Search indices are still initializing. Please wait a moment and try again."
-            
+        # Ensure indexer is initialized (synchronous, will block until ready)
         _ensure_wiki_indexer()
 
         if wiki_indexer and hasattr(wiki_indexer, 'bm25') and wiki_indexer.bm25:
@@ -232,12 +230,10 @@ def query_internal_knowledge_base(
 
     # Search Local Files
     if source in ["all", "local"]:
-        if not _indexers_initialized:
-            return "⏳ Search indices are still initializing. Please wait a moment and try again."
-            
+        # Ensure indexer is initialized (synchronous, will block until ready)
         _ensure_local_indexer()
 
-        if local_indexer and hasattr(local_indexer, 'documents') and local_indexer.documents:
+        if local_indexer and hasattr(local_indexer, 'bm25') and local_indexer.bm25:
             local_results = local_indexer.hybrid_search(query, top_k=top_k, strategy=strategy)
             for doc in local_results:
                 doc['data_source'] = 'Local Files'
@@ -252,17 +248,29 @@ def query_internal_knowledge_base(
     if not all_results:
         return "No results found. Try rephrasing your query or using different keywords."
 
-    # Format results for readability
+    # Format results for readability with citation information
     formatted_results = []
     for i, doc in enumerate(all_results, 1):
         search_method = doc.get('source', 'unknown')
         data_source = doc.get('data_source', 'Unknown')
 
+        # Build citation information block
+        citation_lines = []
+        # Use file path for local files, URL for Wikipedia
+        source_ref = doc.get('path') or doc['url']
+        citation_lines.append(f"【Source】: {source_ref}")
+
+        # Add modification time if available (local files only)
+        if doc.get('modified_time'):
+            citation_lines.append(f"【Last Modified】: {doc['modified_time']}")
+
+        citation_lines.append(f"【Data Source】: {data_source} ({search_method})")
+        citation_lines.append(f"【Title】: {doc['title']}")
+
         formatted_results.append(
-            f"[Result {i}] ({data_source} / {search_method})\n"
-            f"Title: {doc['title']}\n"
-            f"URL: {doc['url']}\n"
-            f"Content: {doc['text']}\n"
+            f"[Result {i}]\n"
+            f"{chr(10).join(citation_lines)}\n"
+            f"【Content】:\n{doc['text']}\n"
         )
 
     return "\n---\n".join(formatted_results)

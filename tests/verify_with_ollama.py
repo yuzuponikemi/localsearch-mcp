@@ -1,5 +1,5 @@
 """
-Ollama Integration Test for Local Search MCP Server
+Ollama Integration Test for LocalKB MCP Server
 
 ⚠️  LOCAL TESTING ONLY - NOT FOR CI/CD ⚠️
 
@@ -145,7 +145,7 @@ async def run_simple_test():
             # Wikipedia search test
             print("\n🔍 Testing Wikipedia search: 'Python programming language'")
             result = await session.call_tool(
-                "search_wikipedia",
+                "search_offline_wikipedia",
                 arguments={"query": "Python programming language", "top_k": 2}
             )
             print(f"\n📄 Wikipedia Result:\n{result.content[0].text}")
@@ -194,8 +194,8 @@ async def run_local_search_test():
             tools = await session.list_tools()
             print(f"✅ Available tools: {[t.name for t in tools.tools]}")
 
-            if "search_local" not in [t.name for t in tools.tools]:
-                print("\n⚠️  Warning: search_local tool not available!")
+            if "search_internal_technical_documents" not in [t.name for t in tools.tools]:
+                print("\n⚠️  Warning: search_internal_technical_documents tool not available!")
                 print("   Make sure LOCAL_DOCS_PATH is set correctly.")
                 return
 
@@ -210,7 +210,7 @@ async def run_local_search_test():
                 print(f"📋 Expected keywords: {', '.join(test['expected_keywords'])}")
 
                 result = await session.call_tool(
-                    "search_local",
+                    "search_internal_technical_documents",
                     arguments={"query": test["query"], "top_k": 3}
                 )
 
@@ -236,7 +236,7 @@ async def run_local_search_test():
 
             # Test combined search (should return both Wikipedia and local results)
             result = await session.call_tool(
-                "search",
+                "query_internal_knowledge_base",
                 arguments={"query": "Python programming language web frameworks", "top_k": 3, "source": "all"}
             )
             result_text = result.content[0].text
@@ -269,8 +269,8 @@ async def run_local_qa_test():
             tools = await session.list_tools()
             print(f"✅ Connected. Available tools: {[t.name for t in tools.tools]}\n")
 
-            if "search_local" not in [t.name for t in tools.tools]:
-                print("\n⚠️  Warning: search_local tool not available!")
+            if "search_internal_technical_documents" not in [t.name for t in tools.tools]:
+                print("\n⚠️  Warning: search_internal_technical_documents tool not available!")
                 return
 
             # Test questions based on test_docs content
@@ -300,7 +300,7 @@ async def run_local_qa_test():
             # Step 1: Search local files with optimized keyword query
             print(f"🔍 Step 1: Searching local files...")
             result = await session.call_tool(
-                "search_local",
+                "search_internal_technical_documents",
                 arguments={"query": search_query, "top_k": 3, "strategy": "keyword"}
             )
 
@@ -361,7 +361,7 @@ Answer:"""
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("Local Search MCP Server - Ollama Integration Test")
+    print("LocalKB MCP Server - Ollama Integration Test")
     print("=" * 60)
 
     # Check command line arguments
