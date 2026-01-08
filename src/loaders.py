@@ -5,6 +5,7 @@ Handles loading local files (Markdown, text, etc.) for indexing.
 import os
 import glob
 import sys
+from datetime import datetime
 from typing import List, Dict
 
 
@@ -60,6 +61,10 @@ def load_local_files(directory_path: str, extensions: List[str] = None) -> List[
                 # Calculate relative path for cleaner IDs
                 rel_path = os.path.relpath(file_path, directory_path)
 
+                # Get file modification time
+                mtime = os.path.getmtime(file_path)
+                modified_time = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+
                 # Create document entry
                 documents.append({
                     "id": f"file://{rel_path}",
@@ -67,7 +72,9 @@ def load_local_files(directory_path: str, extensions: List[str] = None) -> List[
                     "title": os.path.basename(file_path),
                     "source": "local_file",
                     "path": file_path,
-                    "url": f"file://{file_path}"  # Compatible with existing result format
+                    "url": f"file://{file_path}",  # Compatible with existing result format
+                    "modified_time": modified_time,
+                    "mtime": mtime  # Keep numeric timestamp for sorting
                 })
             except Exception as e:
                 print(f"Warning: Skipping file {file_path}: {e}", file=sys.stderr)

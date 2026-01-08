@@ -108,7 +108,9 @@ class BaseHybridIndexer:
                     docs.append({
                         "title": metadata.get('title', 'Unknown'),
                         "url": metadata.get('url', ''),
-                        "text": doc_text
+                        "text": doc_text,
+                        "path": metadata.get('path', ''),
+                        "modified_time": metadata.get('modified_time', '')
                     })
 
             return docs
@@ -600,6 +602,7 @@ class LocalFileIndexer(BaseHybridIndexer):
                     "title": doc['title'],
                     "url": doc['url'],
                     "path": doc.get('path', ''),
+                    "modified_time": doc.get('modified_time', ''),
                     "quality_score": analysis.quality_score,
                     "language": analysis.language
                 }

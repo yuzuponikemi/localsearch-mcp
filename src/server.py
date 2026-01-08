@@ -16,7 +16,7 @@ from src.indexer import WikiIndexer, LocalFileIndexer
 load_dotenv()
 
 # Initialize MCP server
-mcp = FastMCP("MultiSourceLocalSearch")
+mcp = FastMCP("LocalKB")
 
 # Global indexer instances - will be initialized lazily
 wiki_indexer = None
@@ -252,17 +252,29 @@ def query_internal_knowledge_base(
     if not all_results:
         return "No results found. Try rephrasing your query or using different keywords."
 
-    # Format results for readability
+    # Format results for readability with citation information
     formatted_results = []
     for i, doc in enumerate(all_results, 1):
         search_method = doc.get('source', 'unknown')
         data_source = doc.get('data_source', 'Unknown')
 
+        # Build citation information block
+        citation_lines = []
+        # Use file path for local files, URL for Wikipedia
+        source_ref = doc.get('path') or doc['url']
+        citation_lines.append(f"【Source】: {source_ref}")
+
+        # Add modification time if available (local files only)
+        if doc.get('modified_time'):
+            citation_lines.append(f"【Last Modified】: {doc['modified_time']}")
+
+        citation_lines.append(f"【Data Source】: {data_source} ({search_method})")
+        citation_lines.append(f"【Title】: {doc['title']}")
+
         formatted_results.append(
-            f"[Result {i}] ({data_source} / {search_method})\n"
-            f"Title: {doc['title']}\n"
-            f"URL: {doc['url']}\n"
-            f"Content: {doc['text']}\n"
+            f"[Result {i}]\n"
+            f"{chr(10).join(citation_lines)}\n"
+            f"【Content】:\n{doc['text']}\n"
         )
 
     return "\n---\n".join(formatted_results)

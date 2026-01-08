@@ -1,19 +1,20 @@
-# Multi-Source Local Search MCP Server
+# LocalKB - Local Knowledge Base MCP Server
 
-A standalone, offline search server implementing the Model Context Protocol (MCP). This server enables AI assistants to search through **Wikipedia (static, large-scale knowledge)** and **your local files (dynamic, personal knowledge)** without requiring external API calls or internet connectivity.
+A standalone, offline knowledge base server implementing the Model Context Protocol (MCP). **LocalKB** enables AI assistants to search through **Wikipedia (static, large-scale knowledge)** and **your local files (dynamic, personal knowledge)** with **full citation support** - showing exactly where information comes from, when it was last modified, and which file contains it. Perfect for design work and technical documentation where source verification is critical.
 
 [日本語版 README はこちら](#日本語版)
 
 ## Features
 
-- **Multi-Source Search**: Search across Wikipedia AND your local files (Markdown, text) simultaneously
-- **Hybrid Search**: Combines BM25 (keyword matching) + Vector embeddings (semantic similarity) for best results
-- **Smart Indexing**: Wikipedia index cached permanently, local files scanned on startup for latest changes
-- **Completely Offline**: No external API dependencies (Google Search, etc.)
-- **Free & Fast**: Uses efficient algorithms for both keyword and semantic search
-- **MCP Compatible**: Works with any MCP-compatible client (Claude Desktop, etc.)
-- **Ollama Integration**: Includes test client for Ollama-based agents
-- **Easy Setup**: Simple installation with `uv` package manager
+- **📚 Multi-Source Search**: Search across Wikipedia AND your local files (Markdown, text) simultaneously
+- **📎 Citation Support**: Every search result includes source file path, last modified timestamp, and data source - verify information instantly
+- **🔍 Hybrid Search**: Combines BM25 (keyword matching) + Vector embeddings (semantic similarity) for best results
+- **⚡ Smart Indexing**: Wikipedia index cached permanently, local files scanned on startup for latest changes
+- **🔒 Completely Offline**: No external API dependencies (Google Search, etc.)
+- **💰 Free & Fast**: Uses efficient algorithms for both keyword and semantic search
+- **🔌 MCP Compatible**: Works with any MCP-compatible client (Claude Desktop, etc.)
+- **🤖 Ollama Integration**: Includes test client for Ollama-based agents
+- **🚀 Easy Setup**: Simple installation with `uv` package manager
 
 ## Architecture
 
@@ -58,8 +59,8 @@ A standalone, offline search server implementing the Model Context Protocol (MCP
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/localsearch-mcp.git
-cd localsearch-mcp
+git clone https://github.com/yourusername/localkb.git
+cd localkb
 ```
 
 2. Install dependencies:
@@ -266,10 +267,10 @@ Add this to your Claude Desktop MCP configuration:
 ```json
 {
   "mcpServers": {
-    "local-search": {
+    "localkb": {
       "command": "uv",
       "args": ["run", "python", "-m", "src"],
-      "cwd": "/path/to/localsearch-mcp"
+      "cwd": "/path/to/localkb"
     }
   }
 }
@@ -279,10 +280,10 @@ Add this to your Claude Desktop MCP configuration:
 ```json
 {
   "mcpServers": {
-    "local-search": {
+    "localkb": {
       "command": "uv",
       "args": ["run", "python", "-m", "src"],
-      "cwd": "/path/to/localsearch-mcp",
+      "cwd": "/path/to/localkb",
       "env": {
         "LOCAL_DOCS_PATH": "/Users/yourname/Documents/Notes"
       }
@@ -296,7 +297,7 @@ Then restart Claude Desktop and you can search both Wikipedia and your personal 
 ## Project Structure
 
 ```
-localsearch-mcp/
+localkb/
 ├── pyproject.toml          # Dependencies and project metadata
 ├── README.md               # This file
 ├── .env.example            # Environment variable configuration example
@@ -550,18 +551,19 @@ MIT License - see LICENSE file for details
 
 ## 概要
 
-ローカル環境で動作するマルチソース検索 MCP サーバーです。**Wikipedia（静的で大規模な知識）**と**ローカルファイル（動的で個人的な知識）**の両方を検索でき、外部 API に依存せず完全にオフラインで動作します。
+**LocalKB（ローカル知識ベース）**は、ローカル環境で動作するMCPサーバーです。**Wikipedia（静的で大規模な知識）**と**ローカルファイル（動的で個人的な知識）**の両方を検索でき、**完全な引用サポート付き**で情報の出典を即座に確認できます。設計業務や技術文書管理で「その情報はどのファイルから？いつ更新された？」を明確にします。
 
 ## 特徴
 
-- **マルチソース検索**: Wikipedia とローカルファイル（Markdown、テキスト）を同時に検索可能
-- **ハイブリッド検索**: BM25（キーワード検索）+ ベクトル埋め込み（意味検索）の組み合わせで最高の結果を提供
-- **スマートインデックス**: Wikipedia は永続キャッシュ、ローカルファイルは起動時にスキャンして最新状態を反映
-- **完全オフライン**: インターネット接続不要
-- **無料・高速**: キーワードと意味の両方に対応した効率的な検索アルゴリズム
-- **MCP 互換**: Claude Desktop などの MCP 対応クライアントで使用可能
-- **Ollama 統合**: Ollama を使ったテストクライアント付属
-- **簡単セットアップ**: `uv` による簡単インストール
+- **📚 マルチソース検索**: Wikipedia とローカルファイル（Markdown、テキスト）を同時に検索可能
+- **📎 引用サポート**: 検索結果に「ファイルパス」「最終更新日時」「データソース」を明記 - 情報の出典を即座に確認
+- **🔍 ハイブリッド検索**: BM25（キーワード検索）+ ベクトル埋め込み（意味検索）の組み合わせで最高の結果を提供
+- **⚡ スマートインデックス**: Wikipedia は永続キャッシュ、ローカルファイルは起動時にスキャンして最新状態を反映
+- **🔒 完全オフライン**: インターネット接続不要
+- **💰 無料・高速**: キーワードと意味の両方に対応した効率的な検索アルゴリズム
+- **🔌 MCP 互換**: Claude Desktop などの MCP 対応クライアントで使用可能
+- **🤖 Ollama 統合**: Ollama を使ったテストクライアント付属
+- **🚀 簡単セットアップ**: `uv` による簡単インストール
 
 ## アーキテクチャ
 
@@ -606,8 +608,8 @@ MIT License - see LICENSE file for details
 
 1. リポジトリをクローン:
 ```bash
-git clone https://github.com/yourusername/localsearch-mcp.git
-cd localsearch-mcp
+git clone https://github.com/yourusername/localkb.git
+cd localkb
 ```
 
 2. 依存関係をインストール:
@@ -708,10 +710,10 @@ Claude Desktop の MCP 設定に以下を追加:
 ```json
 {
   "mcpServers": {
-    "local-search": {
+    "localkb": {
       "command": "uv",
       "args": ["run", "python", "-m", "src"],
-      "cwd": "/path/to/localsearch-mcp"
+      "cwd": "/path/to/localkb"
     }
   }
 }
@@ -721,10 +723,10 @@ Claude Desktop の MCP 設定に以下を追加:
 ```json
 {
   "mcpServers": {
-    "local-search": {
+    "localkb": {
       "command": "uv",
       "args": ["run", "python", "-m", "src"],
-      "cwd": "/path/to/localsearch-mcp",
+      "cwd": "/path/to/localkb",
       "env": {
         "LOCAL_DOCS_PATH": "/Users/yourname/Documents/Notes"
       }
